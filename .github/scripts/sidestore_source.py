@@ -23,7 +23,7 @@ source = {
             "version": version,
             "buildVersion": build,
             "date": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "localizedDescription": os.environ.get("CHANGES", ""),
+            "localizedDescription": os.environ.get("CHANGES", "").strip().split("\n")[0],
             "downloadURL": f"https://github.com/{repo}/releases/download/{tag}/WaybillRouter.ipa",
             "size": os.path.getsize(ipa),
             "minOSVersion": "17.0",
