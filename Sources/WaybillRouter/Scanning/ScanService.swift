@@ -32,11 +32,14 @@ enum ScanService {
             let boxes = try await recognizeBoxes(in: image)
             AppLog.log("Skan: strona \(i + 1), fragmentów tekstu: \(boxes.count)")
             allLines += boxes.map(\.text)
-            if let column = routeColumn(in: boxes) {
-                AppLog.log("Skan: kolumna „Trasa”: \(column.isEmpty ? "(pusta)" : column.joined(separator: " | "))")
+            if let column = routeColumn(in: boxes), !column.isEmpty {
+                AppLog.log("Skan: kolumna „Trasa”: \(column.joined(separator: " | "))")
                 routeFirms += column
             } else {
-                AppLog.log("Skan: nie znalazłem nagłówka „Trasa” – pokazuję cały tekst do ręcznego wyboru")
+                // Bez nagłówka: wiersze tabeli zaczynają się od numeru L.p. („1 KOSSACKI”).
+                let numbered = numberedRows(in: boxes.map(\.text))
+                AppLog.log("Skan: brak kolumny „Trasa”, wiersze z numerem: \(numbered.isEmpty ? "brak" : numbered.joined(separator: " | "))")
+                routeFirms += numbered
             }
         }
         let date = findDate(in: allLines)
@@ -100,6 +103,18 @@ enum ScanService {
             names.append(name)
         }
         return names
+    }
+
+    /// Linie w stylu „3 HILLWOOD” / „6. SEALED AIR” jako nazwy firm (bez numeru).
+    static func numberedRows(in lines: [String]) -> [String] {
+        lines.compactMap { line in
+            let t = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard t.firstMatch(of: #/^\d{1,2}[.)|]?\s+\S/#) != nil else { return nil }
+            let name = stripRowNumber(t)
+            let letters = name.unicodeScalars.filter { CharacterSet.letters.contains($0) }.count
+            guard letters >= 2, !name.contains(":"), !ignoredWords.contains(name.lowercased()) else { return nil }
+            return name
+        }
     }
 
     /// "1 KOSSACKI" → "KOSSACKI", "6. SEALED AIR" → "SEALED AIR", "ASG 47841007," → "ASG".

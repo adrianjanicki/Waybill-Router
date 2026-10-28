@@ -66,7 +66,7 @@ struct TripEditorView: View {
                     Section("Tekst z dokumentu – dotknij, żeby dodać firmę") {
                         ForEach(suggestions, id: \.self) { line in
                             Button {
-                                firmNames.append(Firm.normalized(line))
+                                firmNames.append(Firm.normalized(ScanService.stripRowNumber(line)))
                                 kmText = ""
                             } label: {
                                 Label(line, systemImage: "plus.circle")
@@ -243,6 +243,7 @@ struct FirmAddressSheet: View {
     @AppStorage(SettingsKey.depotLon) private var depotLon = Defaults.depotLon
 
     @State private var query = ""
+    @State private var results: [GeocodeHit] = []
     @State private var hit: GeocodeHit?
     @State private var message: String?
     @State private var searching = false
@@ -251,22 +252,31 @@ struct FirmAddressSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("ulica, miasto albo nazwa firmy z miastem", text: $query)
-                        .onSubmit { Task { await search() } }
-                    Button {
-                        Task { await search() }
-                    } label: {
-                        HStack { Text("Znajdź"); if searching { Spacer(); ProgressView() } }
+                    HStack {
+                        TextField("nazwa firmy, ulica, miasto", text: $query)
+                            .autocorrectionDisabled()
+                        if searching { ProgressView() }
                     }
-                    .disabled(query.trimmingCharacters(in: .whitespaces).isEmpty || searching)
                 } header: {
                     Text("Adres firmy \(name.uppercased())")
+                } footer: {
+                    Text("Propozycje pojawiają się w trakcie pisania. Dotknij właściwej i zapisz.")
                 }
-                if let hit {
-                    Section("Znaleziono") { Text(hit.label) }
+                if !results.isEmpty {
+                    Section("Propozycje") {
+                        ForEach(results, id: \.self) { r in
+                            Button { hit = r } label: {
+                                HStack {
+                                    Text(r.label).foregroundStyle(.primary)
+                                    Spacer()
+                                    if hit == r { Image(systemName: "checkmark").foregroundStyle(.tint) }
+                                }
+                            }
+                        }
+                    }
                 }
                 if let message {
-                    Text(message).foregroundStyle(.red)
+                    Text(message).foregroundStyle(.secondary)
                 }
             }
             .navigationTitle("Adres firmy")
@@ -276,18 +286,29 @@ struct FirmAddressSheet: View {
                 ToolbarItem(placement: .confirmationAction) { Button("Zapisz", action: save).disabled(hit == nil) }
             }
             .onAppear { if query.isEmpty { query = initialAddress } }
+            .task(id: query) {
+                // Krótka pauza, żeby nie pytać TomTom o każdą literę.
+                try? await Task.sleep(for: .milliseconds(400))
+                guard !Task.isCancelled else { return }
+                await search()
+            }
         }
     }
 
     private func search() async {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard q.count >= 2 else { results = []; return }
         searching = true
         defer { searching = false }
-        message = nil
-        hit = nil
         do {
-            hit = try await TomTomService().geocode(query, near: Coordinate(lat: depotLat, lon: depotLon))
-            if hit == nil { message = "Nie znalazłem tego adresu. Dopisz miasto lub kod pocztowy." }
+            let found = try await TomTomService().search(q, near: Coordinate(lat: depotLat, lon: depotLon))
+            guard !Task.isCancelled else { return }
+            results = found
+            if let hit, !found.contains(hit) { self.hit = nil }
+            if found.count == 1 { hit = found[0] }
+            message = found.isEmpty ? "Brak propozycji. Spróbuj inaczej, np. sama nazwa firmy albo ulica z miastem." : nil
         } catch {
+            guard !Task.isCancelled else { return }
             message = error.localizedDescription
         }
     }
