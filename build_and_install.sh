@@ -3,6 +3,7 @@
 # Użycie:
 #   export TOMTOM_API_KEY="..."   # opcjonalnie - klucz można też wpisać w Ustawieniach aplikacji
 #   ./build_and_install.sh        # build + instalacja + uruchomienie
+#   ./build_and_install.sh --usb  # tylko iPhone podłączony kablem
 #   ./build_and_install.sh build  # tylko build (bez telefonu)
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -37,5 +38,5 @@ if [[ "${1:-}" == "build" ]]; then
     xtool dev build
 else
     # Pierwsze uruchomienie: xtool poprosi o logowanie Apple ID (xtool setup).
-    xtool dev run
+    xtool dev run "$@"
 fi
