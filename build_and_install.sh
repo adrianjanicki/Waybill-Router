@@ -9,6 +9,14 @@ cd "$(dirname "$0")"
 
 command -v xtool >/dev/null || { echo "Brak xtool. Zainstaluj: brew install xtool-org/tap/xtool"; exit 1; }
 
+if ! xcrun -sdk iphoneos -show-sdk-path >/dev/null 2>&1; then
+    echo "Brak iOS SDK. Zainstaluj Xcode z App Store, a potem:"
+    echo "  sudo xcode-select -s /Applications/Xcode.app/Contents/Developer"
+    echo "  sudo xcodebuild -license accept"
+    echo "  xcodebuild -downloadPlatform iOS"
+    exit 1
+fi
+
 # SwiftPM na macOS wywraca się, gdy katalog Swift SDK nie istnieje (xtool używa wbudowanego SDK iOS).
 mkdir -p "$HOME/Library/org.swift.swiftpm/swift-sdks"
 

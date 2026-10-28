@@ -35,6 +35,11 @@ Wymagania: Mac z **Xcode** (uruchom go raz i zaakceptuj licencję), iPhone z iOS
 darmowe Apple ID. Na Macu **nie** trzeba `xtool sdk install` — to krok tylko dla Linuksa.
 
 ```bash
+# 0. Xcode z App Store, potem (jednorazowo):
+sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+sudo xcodebuild -license accept
+xcodebuild -downloadPlatform iOS
+
 # 1. xtool (jednorazowo)
 brew install xtool-org/tap/xtool
 xtool setup            # wybierz "Password", zaloguj się Apple ID (+ kod 2FA)
