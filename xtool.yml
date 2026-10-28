@@ -1,0 +1,6 @@
+version: 1
+# Zmień na własny, unikalny identyfikator (np. pl.twojenazwisko.WaybillRouter).
+# xtool i tak doda prefiks zespołu (np. XTL-1234.) przy podpisywaniu darmowym kontem.
+bundleID: pl.adrian.WaybillRouter
+# Plik generowany przez build_and_install.sh z Resources/Info.base.plist
+infoPath: Resources/Info.plist

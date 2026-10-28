@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Buduje aplikację przez xtool i instaluje ją na podłączonym iPhonie.
+# Użycie:
+#   export TOMTOM_API_KEY="..."   # opcjonalnie - klucz można też wpisać w Ustawieniach aplikacji
+#   ./build_and_install.sh        # build + instalacja + uruchomienie
+#   ./build_and_install.sh build  # tylko build (bez telefonu)
+set -euo pipefail
+cd "$(dirname "$0")"
+
+command -v xtool >/dev/null || { echo "Brak xtool. Zainstaluj: brew install xtool-org/tap/xtool"; exit 1; }
+
+cp Resources/Info.base.plist Resources/Info.plist
+if [[ -n "${TOMTOM_API_KEY:-}" ]]; then
+    /usr/libexec/PlistBuddy -c "Set :TomTomAPIKey ${TOMTOM_API_KEY}" Resources/Info.plist
+    echo "Klucz TomTom wbudowany w aplikację."
+else
+    echo "Uwaga: brak TOMTOM_API_KEY - wpisz klucz w Ustawieniach aplikacji na telefonie."
+fi
+
+if [[ "${1:-}" == "build" ]]; then
+    xtool dev build
+else
+    # Pierwsze uruchomienie: xtool poprosi o logowanie Apple ID (xtool setup).
+    xtool dev run
+fi

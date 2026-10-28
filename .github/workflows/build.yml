@@ -1,0 +1,13 @@
+name: Build (iOS)
+on: [push, pull_request]
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Kompilacja dla iOS (bez podpisu)
+        run: |
+          cp Resources/Info.base.plist Resources/Info.plist
+          xcodebuild -scheme WaybillRouter -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO build | tail -n 40
+          exit ${PIPESTATUS[0]}
