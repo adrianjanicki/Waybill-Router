@@ -5,6 +5,7 @@ import SwiftData
 struct TripEditorView: View {
     var trip: Trip?
     var images: [UIImage]
+    var initialDate: Date = .now
     var onSaved: (Date) -> Void
 
     @Environment(\.modelContext) private var context
@@ -65,7 +66,7 @@ struct TripEditorView: View {
                     Section("Tekst z dokumentu – dotknij, żeby dodać firmę") {
                         ForEach(suggestions, id: \.self) { line in
                             Button {
-                                firmNames.append(Firm.normalized(line))
+                                firmNames.append(Firm.normalized(ScanService.stripRowNumber(line)))
                                 kmText = ""
                             } label: {
                                 Label(line, systemImage: "plus.circle")
@@ -151,6 +152,7 @@ struct TripEditorView: View {
     private func load() async {
         guard !loaded else { return }
         loaded = true
+        date = initialDate
         if let trip {
             date = trip.date
             firmNames = trip.firmNames
@@ -164,13 +166,14 @@ struct TripEditorView: View {
         do {
             let result = try await ScanService.recognize(images: images, knownFirmNames: firms.map(\.name))
             if let d = result.date { date = d }
-            firmNames = result.knownFirms
+            firmNames = result.routeFirms
             scanLines = result.lines
-            status = result.knownFirms.isEmpty
-                ? "Nie rozpoznałem znanych firm. Dotknij nazw z dokumentu poniżej albo wpisz je."
-                : "Rozpoznane firmy: \(result.knownFirms.count). Sprawdź, czy wszystkie są na liście."
+            status = result.routeFirms.isEmpty
+                ? "Nie znalazłem kolumny „Trasa”. Dotknij nazw firm z dokumentu poniżej albo wpisz je."
+                : "Firmy z kolumny „Trasa”: \(result.routeFirms.count). Sprawdź listę i datę."
         } catch {
             status = "Nie udało się odczytać dokumentu: \(error.localizedDescription)"
+            AppLog.log("Skan: błąd OCR: \(error.localizedDescription)")
         }
         if !firmNames.isEmpty && missing.isEmpty {
             working = false
@@ -194,8 +197,10 @@ struct TripEditorView: View {
             kmText = Fmt.km((Double(result.lengthMeters) / 1000).rounded())
             durationSeconds = result.travelSeconds
             status = "Trasa ułożona: \(kmText) km według TomTom."
+            AppLog.log("Trasa: \(firmNames.joined(separator: " → ")) = \(kmText) km")
         } catch {
             status = "Nie udało się policzyć trasy: \(error.localizedDescription). Możesz wpisać kilometry ręcznie."
+            AppLog.log("Trasa: błąd TomTom: \(error.localizedDescription)")
         }
     }
 
@@ -209,7 +214,13 @@ struct TripEditorView: View {
         } else {
             context.insert(Trip(date: date, firmNames: firmNames, km: km, durationSeconds: durationSeconds))
         }
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            AppLog.log("Zapis kursu: błąd: \(error.localizedDescription)")
+        }
+        let total = (try? context.fetchCount(FetchDescriptor<Trip>())) ?? -1
+        AppLog.log("\(trip == nil ? "Nowy kurs" : "Zmieniony kurs") \(Fmt.full(date)): \(firmNames.joined(separator: ", ")), \(Fmt.km(km)) km. Kursów w bazie: \(total)")
         onSaved(date)
         dismiss()
     }
@@ -232,6 +243,7 @@ struct FirmAddressSheet: View {
     @AppStorage(SettingsKey.depotLon) private var depotLon = Defaults.depotLon
 
     @State private var query = ""
+    @State private var results: [GeocodeHit] = []
     @State private var hit: GeocodeHit?
     @State private var message: String?
     @State private var searching = false
@@ -240,22 +252,31 @@ struct FirmAddressSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("ulica, miasto albo nazwa firmy z miastem", text: $query)
-                        .onSubmit { Task { await search() } }
-                    Button {
-                        Task { await search() }
-                    } label: {
-                        HStack { Text("Znajdź"); if searching { Spacer(); ProgressView() } }
+                    HStack {
+                        TextField("nazwa firmy, ulica, miasto", text: $query)
+                            .autocorrectionDisabled()
+                        if searching { ProgressView() }
                     }
-                    .disabled(query.trimmingCharacters(in: .whitespaces).isEmpty || searching)
                 } header: {
                     Text("Adres firmy \(name.uppercased())")
+                } footer: {
+                    Text("Propozycje pojawiają się w trakcie pisania. Dotknij właściwej i zapisz.")
                 }
-                if let hit {
-                    Section("Znaleziono") { Text(hit.label) }
+                if !results.isEmpty {
+                    Section("Propozycje") {
+                        ForEach(results, id: \.self) { r in
+                            Button { hit = r } label: {
+                                HStack {
+                                    Text(r.label).foregroundStyle(.primary)
+                                    Spacer()
+                                    if hit == r { Image(systemName: "checkmark").foregroundStyle(.tint) }
+                                }
+                            }
+                        }
+                    }
                 }
                 if let message {
-                    Text(message).foregroundStyle(.red)
+                    Text(message).foregroundStyle(.secondary)
                 }
             }
             .navigationTitle("Adres firmy")
@@ -265,18 +286,29 @@ struct FirmAddressSheet: View {
                 ToolbarItem(placement: .confirmationAction) { Button("Zapisz", action: save).disabled(hit == nil) }
             }
             .onAppear { if query.isEmpty { query = initialAddress } }
+            .task(id: query) {
+                // Krótka pauza, żeby nie pytać TomTom o każdą literę.
+                try? await Task.sleep(for: .milliseconds(400))
+                guard !Task.isCancelled else { return }
+                await search()
+            }
         }
     }
 
     private func search() async {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard q.count >= 2 else { results = []; return }
         searching = true
         defer { searching = false }
-        message = nil
-        hit = nil
         do {
-            hit = try await TomTomService().geocode(query, near: Coordinate(lat: depotLat, lon: depotLon))
-            if hit == nil { message = "Nie znalazłem tego adresu. Dopisz miasto lub kod pocztowy." }
+            let found = try await TomTomService().search(q, near: Coordinate(lat: depotLat, lon: depotLon))
+            guard !Task.isCancelled else { return }
+            results = found
+            if let hit, !found.contains(hit) { self.hit = nil }
+            if found.count == 1 { hit = found[0] }
+            message = found.isEmpty ? "Brak propozycji. Spróbuj inaczej, np. sama nazwa firmy albo ulica z miastem." : nil
         } catch {
+            guard !Task.isCancelled else { return }
             message = error.localizedDescription
         }
     }
@@ -293,6 +325,7 @@ struct FirmAddressSheet: View {
             context.insert(Firm(name: name, address: hit.label, lat: hit.coordinate.lat, lon: hit.coordinate.lon))
         }
         try? context.save()
+        AppLog.log("Adres firmy \(name.uppercased()): \(hit.label)")
         onSaved()
         dismiss()
     }

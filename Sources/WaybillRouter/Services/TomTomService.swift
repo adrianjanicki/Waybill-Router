@@ -5,7 +5,7 @@ struct Coordinate: Hashable {
     var lon: Double
 }
 
-struct GeocodeHit {
+struct GeocodeHit: Hashable {
     var label: String
     var coordinate: Coordinate
 }
@@ -45,23 +45,33 @@ struct TomTomService {
 
     /// Szuka firmy/adresu w Polsce, najbliżej magazynu.
     func geocode(_ query: String, near: Coordinate) async throws -> GeocodeHit? {
+        try await search(query, near: near, limit: 1).first
+    }
+
+    /// Kilka propozycji (firmy i adresy) dla wpisanego tekstu, najbliższe magazynowi pierwsze.
+    func search(_ query: String, near: Coordinate, limit: Int = 8) async throws -> [GeocodeHit] {
         guard !apiKey.isEmpty else { throw TomTomError.missingKey }
-        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
-            .addingPercentEncoding(withAllowedCharacters: Self.pathAllowed) ?? ""
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+        let q = trimmed.addingPercentEncoding(withAllowedCharacters: Self.pathAllowed) ?? ""
         var c = URLComponents(string: "https://api.tomtom.com/search/2/search/\(q).json")!
         c.queryItems = [
             .init(name: "key", value: apiKey),
             .init(name: "countrySet", value: "PL"),
             .init(name: "language", value: "pl-PL"),
-            .init(name: "limit", value: "1"),
+            .init(name: "limit", value: String(limit)),
+            .init(name: "typeahead", value: "true"),
             .init(name: "lat", value: String(near.lat)),
             .init(name: "lon", value: String(near.lon)),
         ]
         let response: SearchResponse = try await get(c.url!)
-        guard let r = response.results.first else { return nil }
-        let addr = r.address?.freeformAddress ?? query
-        let label = [r.poi?.name, addr].compactMap { $0 }.joined(separator: ", ")
-        return GeocodeHit(label: label, coordinate: Coordinate(lat: r.position.lat, lon: r.position.lon))
+        var seen = Set<String>()
+        return response.results.compactMap { r in
+            let addr = r.address?.freeformAddress ?? trimmed
+            let label = [r.poi?.name, addr].compactMap { $0 }.joined(separator: ", ")
+            guard seen.insert(label).inserted else { return nil }
+            return GeocodeHit(label: label, coordinate: Coordinate(lat: r.position.lat, lon: r.position.lon))
+        }
     }
 
     /// Trasa magazyn → przystanki → magazyn. `computeBestOrder=true` układa przystanki optymalnie (TSP);
