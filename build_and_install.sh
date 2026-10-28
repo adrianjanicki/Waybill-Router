@@ -9,6 +9,9 @@ cd "$(dirname "$0")"
 
 command -v xtool >/dev/null || { echo "Brak xtool. Zainstaluj: brew install xtool-org/tap/xtool"; exit 1; }
 
+# SwiftPM na macOS wywraca się, gdy katalog Swift SDK nie istnieje (xtool używa wbudowanego SDK iOS).
+mkdir -p "$HOME/Library/org.swift.swiftpm/swift-sdks"
+
 cp Resources/Info.base.plist Resources/Info.plist
 if [[ "${TOMTOM_API_KEY:-}" == "tu_wklej_klucz" || "${TOMTOM_API_KEY:-}" == "twój_klucz" ]]; then
     echo "Uwaga: TOMTOM_API_KEY to wciąż przykładowy tekst - wpisz prawdziwy klucz (albo podasz go w Ustawieniach aplikacji)."
