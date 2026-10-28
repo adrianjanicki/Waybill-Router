@@ -70,6 +70,27 @@ Darmowe konto Apple podpisuje aplikację na **7 dni** — potem uruchom `./build
 Przenieś plik na iPhone'a (AirDrop → Zapisz w Plikach), w SideStore: **My Apps → + → wybierz WaybillRouter.ipa**.
 SideStore sam odświeża podpis bez komputera. Pamiętaj o limicie 3 aplikacji na darmowe Apple ID (SideStore liczy się jako jedna).
 
+### Aktualizacje bez Maca: źródło SideStore
+
+Po każdej zmianie na `main` GitHub sam buduje `WaybillRouter.ipa` i publikuje wydanie
+(zakładka **Releases**). Jednorazowo dodaj źródło w SideStore: **Sources → + →**
+
+```
+https://github.com/adrianjanicki/Waybill-Router/releases/latest/download/apps.json
+```
+
+Potem aplikacja z tego źródła pokazuje się w **Browse**, a nowe wersje w **My Apps → Updates**.
+Klucz TomTom nie jest wbudowany (repozytorium jest publiczne) – wpisz go raz w Ustawieniach aplikacji.
+
+### Podgląd na Macu przed aktualizacją
+
+```bash
+./preview.sh          # projekt Xcode: wybierz symulator iPhone i kliknij ▶︎ (Run)
+./preview.sh canvas   # podgląd ekranów z przykładowymi kursami (Previews.swift, ⌥⌘↩)
+```
+Symulator ma własne, puste dane. Skaner aparatu w nim nie działa – użyj „Wybierz zdjęcie z galerii”
+(zdjęcie przeciągnij z Findera na okno symulatora).
+
 ### Inne komendy
 
 ```bash
