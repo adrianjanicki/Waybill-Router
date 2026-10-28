@@ -10,6 +10,11 @@ cd "$(dirname "$0")"
 command -v xtool >/dev/null || { echo "Brak xtool. Zainstaluj: brew install xtool-org/tap/xtool"; exit 1; }
 
 cp Resources/Info.base.plist Resources/Info.plist
+if [[ "${TOMTOM_API_KEY:-}" == "tu_wklej_klucz" || "${TOMTOM_API_KEY:-}" == "twój_klucz" ]]; then
+    echo "Uwaga: TOMTOM_API_KEY to wciąż przykładowy tekst - wpisz prawdziwy klucz (albo podasz go w Ustawieniach aplikacji)."
+    unset TOMTOM_API_KEY
+fi
+
 if [[ -n "${TOMTOM_API_KEY:-}" ]]; then
     /usr/libexec/PlistBuddy -c "Set :TomTomAPIKey ${TOMTOM_API_KEY}" Resources/Info.plist
     echo "Klucz TomTom wbudowany w aplikację."
