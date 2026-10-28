@@ -1,0 +1,64 @@
+name: Release (SideStore)
+# Po każdej zmianie na main: buduje WaybillRouter.ipa i publikuje wydanie z apps.json,
+# które SideStore czyta jako źródło aktualizacji.
+on:
+  push:
+    branches: [main, claude/project-thread-s24m9c]
+    paths: ["Sources/**", "Resources/**", "Package.swift", "xtool.yml", ".github/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  ipa:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Wersja
+        id: v
+        run: |
+          build=$(git rev-list --count HEAD)
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "version=1.0.$build" >> "$GITHUB_OUTPUT"
+
+      - name: Instalacja xtool
+        run: |
+          brew install xtool-org/tap/xtool
+          mkdir -p "$HOME/Library/org.swift.swiftpm/swift-sdks"
+
+      - name: Budowanie .ipa
+        # Bez klucza TomTom: repozytorium jest publiczne, klucz wpisuje się w Ustawieniach aplikacji.
+        run: |
+          cp Resources/Info.base.plist Resources/Info.plist
+          /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string ${{ steps.v.outputs.version }}" Resources/Info.plist
+          /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string ${{ steps.v.outputs.build }}" Resources/Info.plist
+          xtool dev build --ipa --configuration release < /dev/null
+          ls -la xtool/
+          unzip -p xtool/WaybillRouter.ipa 'Payload/*.app/Info.plist' > /tmp/built.plist
+          plutil -p /tmp/built.plist | grep -E 'CFBundle(Identifier|ShortVersionString|Version)"'
+
+      - name: Źródło SideStore
+        env:
+          CHANGES: ${{ github.event.head_commit.message }}
+        run: python3 .github/scripts/sidestore_source.py xtool/WaybillRouter.ipa "${{ steps.v.outputs.version }}" "${{ steps.v.outputs.build }}" apps.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WaybillRouter-${{ steps.v.outputs.version }}
+          path: |
+            xtool/WaybillRouter.ipa
+            apps.json
+
+      - name: Wydanie na GitHubie
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ steps.v.outputs.version }}" xtool/WaybillRouter.ipa apps.json \
+            --title "Karta drogowa ${{ steps.v.outputs.version }}" \
+            --notes "Instalacja/aktualizacja przez SideStore. Źródło: https://github.com/${{ github.repository }}/releases/latest/download/apps.json" \
+            --latest
