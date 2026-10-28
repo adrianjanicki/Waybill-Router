@@ -3,7 +3,7 @@ name: Release (SideStore)
 # które SideStore czyta jako źródło aktualizacji.
 on:
   push:
-    branches: [main, claude/project-thread-s24m9c]
+    branches: [main]
     paths: ["Sources/**", "Resources/**", "Package.swift", "xtool.yml", ".github/**"]
   workflow_dispatch:
 
