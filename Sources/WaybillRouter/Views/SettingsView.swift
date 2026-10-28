@@ -87,6 +87,14 @@ struct SettingsView: View {
             } header: {
                 Text("Adresy firm")
             }
+
+            Section {
+                NavigationLink { LogView() } label: {
+                    Label("Dziennik zdarzeń", systemImage: "list.bullet.rectangle")
+                }
+            } footer: {
+                Text("Co aplikacja odczytała ze skanu, jakie trasy policzyła, co zapisała i usunęła. Przyda się przy zgłaszaniu błędów.")
+            }
         }
         .navigationTitle("Ustawienia")
         .sheet(item: $editFirm) { target in

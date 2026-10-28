@@ -5,6 +5,7 @@ import SwiftData
 struct TripEditorView: View {
     var trip: Trip?
     var images: [UIImage]
+    var initialDate: Date = .now
     var onSaved: (Date) -> Void
 
     @Environment(\.modelContext) private var context
@@ -151,6 +152,7 @@ struct TripEditorView: View {
     private func load() async {
         guard !loaded else { return }
         loaded = true
+        date = initialDate
         if let trip {
             date = trip.date
             firmNames = trip.firmNames
@@ -164,13 +166,14 @@ struct TripEditorView: View {
         do {
             let result = try await ScanService.recognize(images: images, knownFirmNames: firms.map(\.name))
             if let d = result.date { date = d }
-            firmNames = result.knownFirms
+            firmNames = result.routeFirms
             scanLines = result.lines
-            status = result.knownFirms.isEmpty
-                ? "Nie rozpoznałem znanych firm. Dotknij nazw z dokumentu poniżej albo wpisz je."
-                : "Rozpoznane firmy: \(result.knownFirms.count). Sprawdź, czy wszystkie są na liście."
+            status = result.routeFirms.isEmpty
+                ? "Nie znalazłem kolumny „Trasa”. Dotknij nazw firm z dokumentu poniżej albo wpisz je."
+                : "Firmy z kolumny „Trasa”: \(result.routeFirms.count). Sprawdź listę i datę."
         } catch {
             status = "Nie udało się odczytać dokumentu: \(error.localizedDescription)"
+            AppLog.log("Skan: błąd OCR: \(error.localizedDescription)")
         }
         if !firmNames.isEmpty && missing.isEmpty {
             working = false
@@ -194,8 +197,10 @@ struct TripEditorView: View {
             kmText = Fmt.km((Double(result.lengthMeters) / 1000).rounded())
             durationSeconds = result.travelSeconds
             status = "Trasa ułożona: \(kmText) km według TomTom."
+            AppLog.log("Trasa: \(firmNames.joined(separator: " → ")) = \(kmText) km")
         } catch {
             status = "Nie udało się policzyć trasy: \(error.localizedDescription). Możesz wpisać kilometry ręcznie."
+            AppLog.log("Trasa: błąd TomTom: \(error.localizedDescription)")
         }
     }
 
@@ -209,7 +214,13 @@ struct TripEditorView: View {
         } else {
             context.insert(Trip(date: date, firmNames: firmNames, km: km, durationSeconds: durationSeconds))
         }
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            AppLog.log("Zapis kursu: błąd: \(error.localizedDescription)")
+        }
+        let total = (try? context.fetchCount(FetchDescriptor<Trip>())) ?? -1
+        AppLog.log("\(trip == nil ? "Nowy kurs" : "Zmieniony kurs") \(Fmt.full(date)): \(firmNames.joined(separator: ", ")), \(Fmt.km(km)) km. Kursów w bazie: \(total)")
         onSaved(date)
         dismiss()
     }
@@ -293,6 +304,7 @@ struct FirmAddressSheet: View {
             context.insert(Firm(name: name, address: hit.label, lat: hit.coordinate.lat, lon: hit.coordinate.lon))
         }
         try? context.save()
+        AppLog.log("Adres firmy \(name.uppercased()): \(hit.label)")
         onSaved()
         dismiss()
     }

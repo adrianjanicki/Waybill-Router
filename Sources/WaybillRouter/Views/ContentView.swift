@@ -7,6 +7,8 @@ struct EditorTarget: Identifiable {
     let id = UUID()
     var trip: Trip?
     var images: [UIImage] = []
+    /// Domyślna data nowego kursu.
+    var date: Date = .now
 }
 
 struct ContentView: View {
@@ -23,6 +25,21 @@ struct ContentView: View {
 
     private var monthTrips: [Trip] { allTrips.filter { $0.date.isSameMonth(as: month) } }
     private var monthKm: Double { monthTrips.reduce(0) { $0 + $1.km } }
+
+    /// Inne miesiące, w których są kursy (żeby kurs zapisany z inną datą nie „znikał”).
+    private var otherMonths: [MonthSummary] {
+        let grouped = Dictionary(grouping: allTrips) { $0.date.startOfMonth }
+        return grouped
+            .filter { !$0.key.isSameMonth(as: month) }
+            .map { MonthSummary(month: $0.key, count: $0.value.count, km: $0.value.reduce(0) { $0 + $1.km }) }
+            .sorted { $0.month > $1.month }
+    }
+
+    /// Nowy kurs ręcznie: w bieżącym miesiącu dzisiejsza data, w innym – data ostatniego kursu z tego miesiąca.
+    private var newTripDate: Date {
+        if month.isSameMonth(as: .now) { return .now }
+        return monthTrips.last?.date ?? month
+    }
 
     var body: some View {
         NavigationStack {
@@ -47,7 +64,7 @@ struct ContentView: View {
                         Label("Wybierz zdjęcie z galerii", systemImage: "photo")
                     }
                     Button {
-                        editor = EditorTarget()
+                        editor = EditorTarget(date: newTripDate)
                     } label: {
                         Label("Dodaj kurs ręcznie", systemImage: "square.and.pencil")
                     }
@@ -64,6 +81,22 @@ struct ContentView: View {
                             .swipeActions {
                                 Button("Usuń", role: .destructive) { tripToDelete = trip }
                             }
+                    }
+                }
+
+                if !otherMonths.isEmpty {
+                    Section("Inne miesiące z kursami") {
+                        ForEach(otherMonths) { item in
+                            Button { month = item.month } label: {
+                                HStack {
+                                    Text(Fmt.month(item.month))
+                                    Spacer()
+                                    Text("\(item.count) kurs. · \(Fmt.km(item.km)) km")
+                                        .monospacedDigit().foregroundStyle(.secondary)
+                                }
+                            }
+                            .foregroundStyle(.primary)
+                        }
                     }
                 }
             }
@@ -96,9 +129,12 @@ struct ContentView: View {
                 .ignoresSafeArea()
             }
             .sheet(item: $editor) { target in
-                TripEditorView(trip: target.trip, images: target.images) { savedDate in
+                TripEditorView(trip: target.trip, images: target.images, initialDate: target.date) { savedDate in
                     month = savedDate.startOfMonth
                 }
+            }
+            .onAppear {
+                AppLog.log("Start aplikacji. Kursów w bazie: \(allTrips.count)")
             }
             .onChange(of: photoItem) { _, item in
                 guard let item else { return }
@@ -114,7 +150,11 @@ struct ContentView: View {
                 get: { tripToDelete != nil }, set: { if !$0 { tripToDelete = nil } }
             ), titleVisibility: .visible) {
                 Button("Usuń", role: .destructive) {
-                    if let t = tripToDelete { context.delete(t) }
+                    if let t = tripToDelete {
+                        AppLog.log("Usunięto kurs \(Fmt.full(t.date)): \(t.firmNames.joined(separator: ", ")), \(Fmt.km(t.km)) km")
+                        context.delete(t)
+                        try? context.save()
+                    }
                     tripToDelete = nil
                 }
             }
@@ -138,6 +178,13 @@ struct ContentView: View {
             }
         }
     }
+}
+
+private struct MonthSummary: Identifiable {
+    var month: Date
+    var count: Int
+    var km: Double
+    var id: Date { month }
 }
 
 private struct Stat: View {
