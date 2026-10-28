@@ -4,3 +4,5 @@ version: 1
 bundleID: pl.adrian.WaybillRouter
 # Plik generowany przez build_and_install.sh z Resources/Info.base.plist
 infoPath: Resources/Info.plist
+# Ikona aplikacji (PNG 1024×1024, bez przezroczystości)
+iconPath: Resources/AppIcon.png

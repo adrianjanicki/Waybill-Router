@@ -3,7 +3,7 @@ name: Release (SideStore)
 # które SideStore czyta jako źródło aktualizacji.
 on:
   push:
-    branches: [main]
+    branches: [main, claude/project-thread-s24m9c]
     paths: ["Sources/**", "Resources/**", "Package.swift", "xtool.yml", ".github/**"]
   workflow_dispatch:
 
@@ -39,7 +39,8 @@ jobs:
           xtool dev build --ipa --configuration release < /dev/null
           ls -la xtool/
           unzip -p xtool/WaybillRouter.ipa 'Payload/*.app/Info.plist' > /tmp/built.plist
-          plutil -p /tmp/built.plist | grep -E 'CFBundle(Identifier|ShortVersionString|Version)"'
+          plutil -p /tmp/built.plist | grep -E 'CFBundle(Identifier|ShortVersionString|Version)"|CFBundleIcon' || true
+          unzip -l xtool/WaybillRouter.ipa | grep -i -E 'icon|Assets.car' || echo "UWAGA: brak ikony w .ipa"
 
       - name: Źródło SideStore
         env:
