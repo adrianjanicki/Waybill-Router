@@ -62,6 +62,14 @@ Przy pierwszej instalacji na iPhonie:
 Darmowe konto Apple podpisuje aplikację na **7 dni** — potem uruchom `./build_and_install.sh` jeszcze raz
 (dane w aplikacji zostają).
 
+### Bez kabla co 7 dni: SideStore
+
+```bash
+./build_and_install.sh ipa     # tworzy xtool/WaybillRouter.ipa
+```
+Przenieś plik na iPhone'a (AirDrop → Zapisz w Plikach), w SideStore: **My Apps → + → wybierz WaybillRouter.ipa**.
+SideStore sam odświeża podpis bez komputera. Pamiętaj o limicie 3 aplikacji na darmowe Apple ID (SideStore liczy się jako jedna).
+
 ### Inne komendy
 
 ```bash

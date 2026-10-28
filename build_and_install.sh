@@ -5,6 +5,7 @@
 #   ./build_and_install.sh        # build + instalacja + uruchomienie
 #   ./build_and_install.sh --usb  # tylko iPhone podłączony kablem
 #   ./build_and_install.sh build  # tylko build (bez telefonu)
+#   ./build_and_install.sh ipa    # plik xtool/WaybillRouter.ipa do SideStore
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -36,6 +37,10 @@ fi
 
 if [[ "${1:-}" == "build" ]]; then
     xtool dev build
+elif [[ "${1:-}" == "ipa" ]]; then
+    # Niepodpisany .ipa do wgrania np. przez SideStore (SideStore sam go podpisze).
+    xtool dev build --ipa --configuration release
+    echo "Gotowe: $(pwd)/xtool/WaybillRouter.ipa"
 else
     # Pierwsze uruchomienie: xtool poprosi o logowanie Apple ID (xtool setup).
     xtool dev run "$@"
