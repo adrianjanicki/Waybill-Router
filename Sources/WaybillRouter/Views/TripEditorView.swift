@@ -14,6 +14,7 @@ struct TripEditorView: View {
 
     @AppStorage(SettingsKey.depotLat) private var depotLat = Defaults.depotLat
     @AppStorage(SettingsKey.depotLon) private var depotLon = Defaults.depotLon
+    @AppStorage(SettingsKey.keepOrder) private var keepOrder = false
 
     @State private var date = Date()
     @State private var firmNames: [String] = []
@@ -25,6 +26,7 @@ struct TripEditorView: View {
     @State private var working = false
     @State private var addressFor: AddressTarget?
     @State private var loaded = false
+    @State private var editMode: EditMode = .inactive
 
     private var firmsByKey: [String: Firm] {
         Dictionary(firms.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
@@ -49,6 +51,7 @@ struct TripEditorView: View {
                         firmRow(name)
                     }
                     .onDelete { firmNames.remove(atOffsets: $0); kmText = "" }
+                    .onMove { firmNames.move(fromOffsets: $0, toOffset: $1); kmText = "" }
                     HStack {
                         TextField("Dodaj firmę", text: $newFirm)
                             .textInputAutocapitalization(.characters)
@@ -56,9 +59,21 @@ struct TripEditorView: View {
                         Button("Dodaj", action: addTypedFirm).disabled(newFirm.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                 } header: {
-                    Text("Firmy z listu")
+                    HStack {
+                        Text("Firmy z listu")
+                        Spacer()
+                        if firmNames.count > 1 {
+                            Button(editMode.isEditing ? "Gotowe" : "Zmień kolejność") {
+                                withAnimation { editMode = editMode.isEditing ? .inactive : .active }
+                            }
+                            .font(.footnote)
+                            .textCase(nil)
+                        }
+                    }
                 } footer: {
-                    Text("Kolejność ułoży się sama po przeliczeniu trasy. Adres nowej firmy podajesz tylko raz.")
+                    Text(keepOrder
+                         ? "Trasa pojedzie w tej kolejności, w jakiej są firmy na liście. Kolejność zmienisz przyciskiem „Zmień kolejność” (przeciągnij firmę za uchwyt). Adres nowej firmy podajesz tylko raz."
+                         : "Kolejność ułoży się sama po przeliczeniu trasy. Adres nowej firmy podajesz tylko raz.")
                 }
 
                 let suggestions = scanLines.filter { line in !firmNames.contains { Firm.key(for: $0) == Firm.key(for: line) } }
@@ -76,6 +91,11 @@ struct TripEditorView: View {
                 }
 
                 Section {
+                    Toggle("Pomiń optymalizację", isOn: $keepOrder)
+                        .onChange(of: keepOrder) {
+                            kmText = ""
+                            if !firmNames.isEmpty && missing.isEmpty { Task { await computeRoute() } }
+                        }
                     Button {
                         Task { await computeRoute() }
                     } label: {
@@ -118,6 +138,7 @@ struct TripEditorView: View {
                     if missing.isEmpty { Task { await computeRoute() } }
                 }
             }
+            .environment(\.editMode, $editMode)
             .task { await load() }
         }
     }
@@ -187,17 +208,24 @@ struct TripEditorView: View {
         guard !stops.isEmpty, stops.count == firmNames.count else { return }
         working = true
         defer { working = false }
-        status = "Układam trasę i liczę kilometry…"
+        let optimize = !keepOrder
+        status = optimize ? "Układam trasę i liczę kilometry…" : "Liczę kilometry we wpisanej kolejności…"
         do {
+            let names = firmNames
             let result = try await TomTomService().route(
                 depot: Coordinate(lat: depotLat, lon: depotLon),
-                stops: stops.map { Coordinate(lat: $0.lat, lon: $0.lon) }
+                stops: stops.map { Coordinate(lat: $0.lat, lon: $0.lon) },
+                optimize: optimize
             )
-            firmNames = result.order.map { firmNames[$0] }
+            // Lista albo przełącznik mogły się zmienić w trakcie zapytania – wtedy wynik jest nieaktualny.
+            guard names == firmNames, optimize == !keepOrder else { return }
+            firmNames = result.order.map { names[$0] }
             kmText = Fmt.km((Double(result.lengthMeters) / 1000).rounded())
             durationSeconds = result.travelSeconds
-            status = "Trasa ułożona: \(kmText) km według TomTom."
-            AppLog.log("Trasa: \(firmNames.joined(separator: " → ")) = \(kmText) km")
+            status = optimize
+                ? "Trasa ułożona: \(kmText) km według TomTom."
+                : "Trasa we wpisanej kolejności: \(kmText) km według TomTom."
+            AppLog.log("Trasa\(optimize ? "" : " (bez optymalizacji)"): \(firmNames.joined(separator: " → ")) = \(kmText) km")
         } catch {
             status = "Nie udało się policzyć trasy: \(error.localizedDescription). Możesz wpisać kilometry ręcznie."
             AppLog.log("Trasa: błąd TomTom: \(error.localizedDescription)")

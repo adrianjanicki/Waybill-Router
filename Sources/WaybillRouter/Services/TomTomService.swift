@@ -11,7 +11,7 @@ struct GeocodeHit: Hashable {
 }
 
 struct RouteResult {
-    /// Kolejność firm (indeksy z przekazanej tablicy) po optymalizacji TomTom.
+    /// Kolejność firm (indeksy z przekazanej tablicy) po optymalizacji TomTom; bez optymalizacji 0, 1, 2…
     var order: [Int]
     var lengthMeters: Int
     var travelSeconds: Int
@@ -74,17 +74,17 @@ struct TomTomService {
         }
     }
 
-    /// Trasa magazyn → przystanki → magazyn. `computeBestOrder=true` układa przystanki optymalnie (TSP);
-    /// początek i koniec trasy zostają na miejscu.
-    func route(depot: Coordinate, stops: [Coordinate]) async throws -> RouteResult {
+    /// Trasa magazyn → przystanki → magazyn. Gdy `optimize`, `computeBestOrder=true` układa przystanki
+    /// optymalnie (TSP); bez tego TomTom jedzie w podanej kolejności. Początek i koniec trasy zostają na miejscu.
+    func route(depot: Coordinate, stops: [Coordinate], optimize: Bool = true) async throws -> RouteResult {
         guard !apiKey.isEmpty else { throw TomTomError.missingKey }
         let points = ([depot] + stops + [depot]).map { "\($0.lat),\($0.lon)" }.joined(separator: ":")
         var c = URLComponents(string: "https://api.tomtom.com/routing/1/calculateRoute/\(points)/json")!
-        c.queryItems = [URLQueryItem(name: "key", value: apiKey)] + routeQuery(optimize: stops.count > 1)
+        c.queryItems = [URLQueryItem(name: "key", value: apiKey)] + routeQuery(optimize: optimize && stops.count > 1)
         let response: RouteResponse = try await get(c.url!)
         guard let route = response.routes.first else { throw TomTomError.noRoute }
         var order = Array(stops.indices)
-        if let opt = response.optimizedWaypoints, opt.count == stops.count {
+        if optimize, let opt = response.optimizedWaypoints, opt.count == stops.count {
             order = opt.sorted { $0.optimizedIndex < $1.optimizedIndex }.map(\.providedIndex)
         }
         return RouteResult(
