@@ -11,6 +11,7 @@ enum SettingsKey {
     static let depotLat = "depotLat"
     static let depotLon = "depotLon"
     static let truckProfile = "truckProfile"
+    static let keepOrder = "keepStopOrder"
 }
 
 enum Defaults {
@@ -30,6 +31,7 @@ enum Defaults {
             SettingsKey.depotLat: depotLat,
             SettingsKey.depotLon: depotLon,
             SettingsKey.truckProfile: true,
+            SettingsKey.keepOrder: false,
             SettingsKey.rate: 0.0,
         ])
     }

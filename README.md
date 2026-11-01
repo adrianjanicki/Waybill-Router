@@ -1,7 +1,8 @@
 # Karta drogowa (WaybillRouter)
 
 Aplikacja na iPhone'a dla kierowcy: skanujesz list przewozowy, aplikacja znajduje firmy z kolumny „Trasa”,
-TomTom układa optymalną kolejność przystanków (Magazyn → firmy → Magazyn) i liczy kilometry,
+TomTom układa optymalną kolejność przystanków (Magazyn → firmy → Magazyn) i liczy kilometry
+(przełącznik „Pomiń optymalizację” w kursie zostawia kolejność taką, jak na liście),
 a kurs trafia do historii. Na koniec miesiąca masz podsumowanie i gotowe karty drogowe (po 15 kursów) w PDF
 oraz zestawienie CSV do Excela.
 
@@ -14,7 +15,7 @@ podpisywany darmowym kontem Apple ID (personal team).
 |---|---|
 | Skan dokumentu (VisionKit, prostowanie kartki) | `Sources/WaybillRouter/Scanning/DocumentScanner.swift` |
 | OCR (Vision) i wyciąganie firm/daty | `Sources/WaybillRouter/Scanning/ScanService.swift` |
-| TomTom: wyszukiwanie adresów, trasa `computeBestOrder=true`, profil `truck`, bez promów i dróg nieutwardzonych | `Sources/WaybillRouter/Services/TomTomService.swift` |
+| TomTom: wyszukiwanie adresów, trasa `computeBestOrder=true` (lub bez, gdy „Pomiń optymalizację”), profil `truck`, bez promów i dróg nieutwardzonych | `Sources/WaybillRouter/Services/TomTomService.swift` |
 | Karty drogowe PDF + CSV | `Sources/WaybillRouter/Services/KartaExport.swift` |
 | Dane (SwiftData): kursy i adresy firm | `Sources/WaybillRouter/Models/` |
 | Ekrany | `Sources/WaybillRouter/Views/` |
