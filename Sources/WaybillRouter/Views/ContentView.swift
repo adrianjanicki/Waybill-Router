@@ -9,6 +9,13 @@ struct EditorTarget: Identifiable {
     var images: [UIImage] = []
     /// Domyślna data nowego kursu.
     var date: Date = .now
+    /// Wpisane dane – przeżywają schowanie okna gestem w dół.
+    let draft = TripDraft()
+
+    /// Czy po zamknięciu okna jest co przywracać.
+    var shouldPark: Bool {
+        draft.loaded && !draft.finished && draft.hasChanges(trip: trip, images: images)
+    }
 }
 
 struct ContentView: View {
@@ -22,6 +29,9 @@ struct ContentView: View {
     @State private var editor: EditorTarget?
     @State private var tripToDelete: Trip?
     @State private var scannedImages: [UIImage] = []
+    /// Kursy schowane przeciągnięciem w dół – czekają na pasku na dole.
+    @State private var parked: [EditorTarget] = []
+    @State private var parkedToDiscard: EditorTarget?
 
     private var monthTrips: [Trip] { allTrips.filter { $0.date.isSameMonth(as: month) } }
     private var monthKm: Double { monthTrips.reduce(0) { $0 + $1.km } }
@@ -100,6 +110,9 @@ struct ContentView: View {
                     }
                 }
             }
+            .safeAreaInset(edge: .bottom) {
+                if !parked.isEmpty { parkedBar }
+            }
             .navigationTitle("Karta drogowa")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -129,8 +142,15 @@ struct ContentView: View {
                 .ignoresSafeArea()
             }
             .sheet(item: $editor) { target in
-                TripEditorView(trip: target.trip, images: target.images, initialDate: target.date) { savedDate in
+                TripEditorView(trip: target.trip, images: target.images, initialDate: target.date, draft: target.draft) { savedDate in
                     month = savedDate.startOfMonth
+                }
+                .onDisappear {
+                    // Przeciągnięte w dół bez zapisu – chowamy na pasek zamiast gubić.
+                    if target.shouldPark && !parked.contains(where: { $0.id == target.id }) {
+                        withAnimation { parked.append(target) }
+                        AppLog.log("Kurs schowany na pasek: \(target.draft.summary)")
+                    }
                 }
             }
             .onAppear {
@@ -146,6 +166,19 @@ struct ContentView: View {
                     photoItem = nil
                 }
             }
+            .confirmationDialog("Odrzucić niezapisany kurs?", isPresented: Binding(
+                get: { parkedToDiscard != nil }, set: { if !$0 { parkedToDiscard = nil } }
+            ), titleVisibility: .visible) {
+                Button("Odrzuć", role: .destructive) {
+                    if let t = parkedToDiscard {
+                        AppLog.log("Odrzucono schowany kurs: \(t.draft.summary)")
+                        withAnimation { parked.removeAll { $0.id == t.id } }
+                    }
+                    parkedToDiscard = nil
+                }
+            } message: {
+                Text(parkedToDiscard?.draft.summary ?? "")
+            }
             .confirmationDialog("Usunąć ten kurs?", isPresented: Binding(
                 get: { tripToDelete != nil }, set: { if !$0 { tripToDelete = nil } }
             ), titleVisibility: .visible) {
@@ -159,6 +192,41 @@ struct ContentView: View {
                 }
             }
         }
+    }
+
+    /// Pasek z kursami schowanymi gestem – dotknięcie otwiera kurs z powrotem.
+    private var parkedBar: some View {
+        VStack(spacing: 8) {
+            ForEach(parked) { target in
+                HStack(spacing: 12) {
+                    Button {
+                        parked.removeAll { $0.id == target.id }
+                        editor = target
+                    } label: {
+                        HStack {
+                            Image(systemName: "chevron.up.circle.fill").font(.title2)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(target.trip == nil ? "Niezapisany kurs – wróć" : "Niezapisane zmiany – wróć")
+                                    .font(.subheadline.weight(.semibold))
+                                Text(target.draft.summary).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                            Spacer()
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    Button { parkedToDiscard = target } label: {
+                        Image(systemName: "xmark.circle.fill").font(.title2).foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(12)
+                .background(Color.orange.opacity(0.15), in: RoundedRectangle(cornerRadius: 14))
+            }
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+        .background(.bar)
     }
 
     private var summary: some View {
