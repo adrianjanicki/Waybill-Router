@@ -1,23 +1,23 @@
 import UIKit
 
 /// Dane nagłówka karty drogowej.
-struct KartaHeader {
+struct KartaHeader: Hashable {
     var carrier: String
     var car: String
     var registration: String
 }
 
-/// Karty drogowe po 15 kursów (PDF A4) i zestawienie CSV do Excela.
+/// Karty drogowe po 15 kursów (PDF A4, Word .docx) i zestawienie CSV do Excela.
 enum KartaExport {
     static let tripsPerCard = 15
 
-    static func pdf(trips: [Trip], header: KartaHeader, month: Date) throws -> URL {
+    static func pdf(rows: [KartaRow], header: KartaHeader, month: Date) throws -> URL {
         let page = CGRect(x: 0, y: 0, width: 595, height: 842)
         let renderer = UIGraphicsPDFRenderer(bounds: page)
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("karta_drogowa_\(fileMonth(month)).pdf")
         try renderer.writePDF(to: url) { ctx in
-            for card in trips.chunked(tripsPerCard) {
+            for card in rows.chunked(tripsPerCard) {
                 ctx.beginPage()
                 drawCard(card, header: header, in: page)
             }
@@ -25,11 +25,13 @@ enum KartaExport {
         return url
     }
 
-    static func csv(trips: [Trip], month: Date, rate: Double) throws -> URL {
+    static func csv(rows trips: [KartaRow], month: Date, rate: Double) throws -> URL {
         var rows = ["Karta;LP;Data;Opis trasy;KM"]
         for (i, card) in trips.chunked(tripsPerCard).enumerated() {
             for (j, t) in card.enumerated() {
-                rows.append("\(i + 1);\(j + 1);\(Fmt.full(t.date));\(t.routeDescription);\(Fmt.km(t.km))")
+                let desc = t.description.replacingOccurrences(of: ";", with: ",")
+                    .replacingOccurrences(of: "\n", with: " ")
+                rows.append("\(i + 1);\(j + 1);\(Fmt.full(t.date));\(desc);\(Fmt.km(t.km))")
             }
             rows.append(";;;SUMA KARTA \(i + 1);\(Fmt.km(card.reduce(0) { $0 + $1.km }))")
         }
@@ -45,14 +47,14 @@ enum KartaExport {
         return url
     }
 
-    private static func fileMonth(_ d: Date) -> String {
+    static func fileMonth(_ d: Date) -> String {
         let c = Calendar.current.dateComponents([.year, .month], from: d)
         return String(format: "%04ld-%02ld", c.year ?? 0, c.month ?? 0)
     }
 
     // MARK: - Rysowanie
 
-    private static func drawCard(_ card: [Trip], header: KartaHeader, in page: CGRect) {
+    private static func drawCard(_ card: [KartaRow], header: KartaHeader, in page: CGRect) {
         let margin: CGFloat = 50
         let width = page.width - 2 * margin
         var y: CGFloat = 50
@@ -88,7 +90,7 @@ enum KartaExport {
         for i in 0..<tripsPerCard {
             if i < card.count {
                 let t = card[i]
-                row(["\(i + 1)", Fmt.dayMonth(t.date), t.routeDescription, Fmt.km(t.km)], height: 30)
+                row(["\(i + 1)", Fmt.dayMonth(t.date), t.description, Fmt.km(t.km)], height: 30)
             } else {
                 row(["\(i + 1)", "", "", ""], height: 30)
             }

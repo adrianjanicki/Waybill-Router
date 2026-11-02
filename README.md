@@ -4,7 +4,7 @@ Aplikacja na iPhone'a dla kierowcy: skanujesz list przewozowy, aplikacja znajduj
 TomTom układa optymalną kolejność przystanków (Magazyn → firmy → Magazyn) i liczy kilometry
 (przełącznik „Pomiń optymalizację” w kursie zostawia kolejność taką, jak na liście),
 a kurs trafia do historii. Na koniec miesiąca masz podsumowanie i gotowe karty drogowe (po 15 kursów) w PDF
-oraz zestawienie CSV do Excela.
+i Word (.docx, do edycji) oraz zestawienie CSV do Excela.
 
 Budowane przez [xtool](https://github.com/xtool-org/xtool) — zwykły pakiet SwiftPM, bez projektu Xcode,
 podpisywany darmowym kontem Apple ID (personal team).
@@ -17,6 +17,8 @@ podpisywany darmowym kontem Apple ID (personal team).
 | OCR (Vision) i wyciąganie firm/daty | `Sources/WaybillRouter/Scanning/ScanService.swift` |
 | TomTom: wyszukiwanie adresów, trasa `computeBestOrder=true` (lub bez, gdy „Pomiń optymalizację”), profil `truck`, bez promów i dróg nieutwardzonych | `Sources/WaybillRouter/Services/TomTomService.swift` |
 | Karty drogowe PDF + CSV | `Sources/WaybillRouter/Services/KartaExport.swift` |
+| Karty drogowe Word (.docx) | `Sources/WaybillRouter/Services/KartaDocx.swift` |
+| Ręczne poprawki kart | `Sources/WaybillRouter/Models/KartaEdits.swift` |
 | Dane (SwiftData): kursy i adresy firm | `Sources/WaybillRouter/Models/` |
 | Ekrany | `Sources/WaybillRouter/Views/` |
 | Konfiguracja xtool (bundle ID, Info.plist) | `xtool.yml` |
@@ -27,7 +29,8 @@ podpisywany darmowym kontem Apple ID (personal team).
    pozostałe dodajesz jednym dotknięciem z listy „Tekst z dokumentu” albo wpisujesz.
 2. Nowej firmie podajesz adres **tylko raz** (np. „ul. Przemysłowa 5, Radzymin”). Potem jest zapamiętany.
 3. Trasa liczy się sama. Możesz poprawić kilometry ręcznie i zapisać kurs.
-4. Ikona **Karty** (lewy górny róg) — karty drogowe miesiąca, eksport PDF i CSV (udostępnij → Mail, Pliki, WhatsApp…).
+4. Ikona **Karty** (lewy górny róg) — karty drogowe miesiąca, eksport PDF, Word i CSV (udostępnij → Mail, Pliki, WhatsApp…).
+   Stuknij wiersz karty, żeby poprawić datę, opis lub km na karcie (kurs zostaje bez zmian); nagłówek też można zmienić dla danego miesiąca.
 5. **Ustawienia** — klucz TomTom, stawka zł/km, dane do karty, adres magazynu, lista adresów firm.
 
 ## Budowanie na Macu
