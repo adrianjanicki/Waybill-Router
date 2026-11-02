@@ -6,6 +6,7 @@ struct TripEditorView: View {
     var trip: Trip?
     var images: [UIImage]
     var initialDate: Date = .now
+    @Bindable var draft: TripDraft = TripDraft()
     var onSaved: (Date) -> Void
 
     @Environment(\.modelContext) private var context
@@ -16,63 +17,48 @@ struct TripEditorView: View {
     @AppStorage(SettingsKey.depotLon) private var depotLon = Defaults.depotLon
     @AppStorage(SettingsKey.keepOrder) private var keepOrder = false
 
-    @State private var date = Date()
-    @State private var firmNames: [String] = []
-    @State private var kmText = ""
-    @State private var durationSeconds = 0
-    @State private var scanLines: [String] = []
-    @State private var newFirm = ""
-    @State private var status: String?
     @State private var working = false
     @State private var addressFor: AddressTarget?
-    @State private var loaded = false
     @State private var editMode: EditMode = .inactive
     @State private var confirmDiscard = false
 
     private var firmsByKey: [String: Firm] {
         Dictionary(firms.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
     }
-    private var missing: [String] { firmNames.filter { firmsByKey[Firm.key(for: $0)] == nil } }
-    private var km: Double? { Double(kmText.replacingOccurrences(of: ",", with: ".")) }
+    private var missing: [String] { draft.firmNames.filter { firmsByKey[Firm.key(for: $0)] == nil } }
+    private var km: Double? { Double(draft.kmText.replacingOccurrences(of: ",", with: ".")) }
 
-    /// Czy jest coś, co by przepadło po zamknięciu bez zapisu.
-    private var hasChanges: Bool {
-        if !newFirm.trimmingCharacters(in: .whitespaces).isEmpty { return true }
-        if let trip {
-            return trip.date != date || trip.firmNames != firmNames || Fmt.km(trip.km) != kmText
-        }
-        return !images.isEmpty || !firmNames.isEmpty || !kmText.isEmpty
-    }
+    private var hasChanges: Bool { draft.hasChanges(trip: trip, images: images) }
 
     var body: some View {
         NavigationStack {
             Form {
-                if working && !images.isEmpty && scanLines.isEmpty {
+                if working && !images.isEmpty && draft.scanLines.isEmpty {
                     Section { HStack { ProgressView(); Text("Odczytuję list przewozowy…") } }
                 }
 
                 Section {
-                    DatePicker("Data", selection: $date, displayedComponents: .date)
+                    DatePicker("Data", selection: $draft.date, displayedComponents: .date)
                         .environment(\.locale, Fmt.pl)
                 }
 
                 Section {
-                    ForEach(firmNames, id: \.self) { name in
+                    ForEach(draft.firmNames, id: \.self) { name in
                         firmRow(name)
                     }
-                    .onDelete { firmNames.remove(atOffsets: $0); kmText = "" }
-                    .onMove { firmNames.move(fromOffsets: $0, toOffset: $1); kmText = "" }
+                    .onDelete { draft.firmNames.remove(atOffsets: $0); draft.kmText = "" }
+                    .onMove { draft.firmNames.move(fromOffsets: $0, toOffset: $1); draft.kmText = "" }
                     HStack {
-                        TextField("Dodaj firmę", text: $newFirm)
+                        TextField("Dodaj firmę", text: $draft.newFirm)
                             .textInputAutocapitalization(.characters)
                             .onSubmit(addTypedFirm)
-                        Button("Dodaj", action: addTypedFirm).disabled(newFirm.trimmingCharacters(in: .whitespaces).isEmpty)
+                        Button("Dodaj", action: addTypedFirm).disabled(draft.newFirm.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                 } header: {
                     HStack {
                         Text("Firmy z listu")
                         Spacer()
-                        if firmNames.count > 1 {
+                        if draft.firmNames.count > 1 {
                             Button(editMode.isEditing ? "Gotowe" : "Zmień kolejność") {
                                 withAnimation { editMode = editMode.isEditing ? .inactive : .active }
                             }
@@ -86,13 +72,13 @@ struct TripEditorView: View {
                          : "Kolejność ułoży się sama po przeliczeniu trasy. Adres nowej firmy podajesz tylko raz.")
                 }
 
-                let suggestions = scanLines.filter { line in !firmNames.contains { Firm.key(for: $0) == Firm.key(for: line) } }
+                let suggestions = draft.scanLines.filter { line in !draft.firmNames.contains { Firm.key(for: $0) == Firm.key(for: line) } }
                 if !suggestions.isEmpty {
                     Section("Tekst z dokumentu – dotknij, żeby dodać firmę") {
                         ForEach(suggestions, id: \.self) { line in
                             Button {
-                                firmNames.append(Firm.normalized(ScanService.stripRowNumber(line)))
-                                kmText = ""
+                                draft.firmNames.append(Firm.normalized(ScanService.stripRowNumber(line)))
+                                draft.kmText = ""
                             } label: {
                                 Label(line, systemImage: "plus.circle")
                             }
@@ -103,36 +89,36 @@ struct TripEditorView: View {
                 Section {
                     Toggle("Pomiń optymalizację", isOn: $keepOrder)
                         .onChange(of: keepOrder) {
-                            kmText = ""
-                            if !firmNames.isEmpty && missing.isEmpty { Task { await computeRoute() } }
+                            draft.kmText = ""
+                            if !draft.firmNames.isEmpty && missing.isEmpty { Task { await computeRoute() } }
                         }
                     Button {
                         Task { await computeRoute() }
                     } label: {
                         HStack {
                             Text("Przelicz trasę (TomTom)")
-                            if working && !firmNames.isEmpty { Spacer(); ProgressView() }
+                            if working && !draft.firmNames.isEmpty { Spacer(); ProgressView() }
                         }
                     }
-                    .disabled(firmNames.isEmpty || !missing.isEmpty || working)
+                    .disabled(draft.firmNames.isEmpty || !missing.isEmpty || working)
 
                     HStack {
                         Text("Kilometry")
-                        TextField("0", text: $kmText)
+                        TextField("0", text: $draft.kmText)
                             .keyboardType(.decimalPad)
                             .multilineTextAlignment(.trailing)
                             .font(.title3.monospacedDigit())
                     }
-                    if durationSeconds > 0 {
-                        LabeledContent("Czas jazdy", value: Fmt.duration(durationSeconds))
+                    if draft.durationSeconds > 0 {
+                        LabeledContent("Czas jazdy", value: Fmt.duration(draft.durationSeconds))
                     }
-                    if let status {
+                    if let status = draft.status {
                         Text(status).font(.footnote).foregroundStyle(.secondary)
                     }
                 } header: {
                     Text("Trasa")
                 } footer: {
-                    Text((["Magazyn"] + firmNames.map { $0.uppercased() } + ["Magazyn"]).joined(separator: " – "))
+                    Text((["Magazyn"] + draft.firmNames.map { $0.uppercased() } + ["Magazyn"]).joined(separator: " – "))
                 }
             }
             .navigationTitle(trip == nil ? "Nowy kurs" : "Edytuj kurs")
@@ -144,14 +130,13 @@ struct TripEditorView: View {
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Zapisz", action: save).disabled(firmNames.isEmpty || (km ?? 0) <= 0)
+                    Button("Zapisz", action: save).disabled(draft.firmNames.isEmpty || (km ?? 0) <= 0)
                 }
             }
-            // Przypadkowe przesunięcie palcem w dół nie zamyka kursu z niezapisanymi danymi.
-            .interactiveDismissDisabled(hasChanges || working)
             .confirmationDialog("Zamknąć bez zapisywania?", isPresented: $confirmDiscard, titleVisibility: .visible) {
                 Button("Odrzuć zmiany", role: .destructive) {
-                    AppLog.log("Edytor kursu zamknięty bez zapisu: \(firmNames.joined(separator: ", "))")
+                    AppLog.log("Edytor kursu zamknięty bez zapisu: \(draft.firmNames.joined(separator: ", "))")
+                    draft.finished = true
                     dismiss()
                 }
                 Button("Wróć do edycji", role: .cancel) {}
@@ -188,22 +173,22 @@ struct TripEditorView: View {
     }
 
     private func addTypedFirm() {
-        let name = Firm.normalized(newFirm)
-        guard !name.isEmpty, !firmNames.contains(where: { Firm.key(for: $0) == Firm.key(for: name) }) else { return }
-        firmNames.append(name)
-        newFirm = ""
-        kmText = ""
+        let name = Firm.normalized(draft.newFirm)
+        guard !name.isEmpty, !draft.firmNames.contains(where: { Firm.key(for: $0) == Firm.key(for: name) }) else { return }
+        draft.firmNames.append(name)
+        draft.newFirm = ""
+        draft.kmText = ""
     }
 
     private func load() async {
-        guard !loaded else { return }
-        loaded = true
-        date = initialDate
+        guard !draft.loaded else { return }
+        draft.loaded = true
+        draft.date = initialDate
         if let trip {
-            date = trip.date
-            firmNames = trip.firmNames
-            kmText = Fmt.km(trip.km)
-            durationSeconds = trip.durationSeconds
+            draft.date = trip.date
+            draft.firmNames = trip.firmNames
+            draft.kmText = Fmt.km(trip.km)
+            draft.durationSeconds = trip.durationSeconds
             return
         }
         guard !images.isEmpty else { return }
@@ -211,17 +196,19 @@ struct TripEditorView: View {
         defer { working = false }
         do {
             let result = try await ScanService.recognize(images: images, knownFirmNames: firms.map(\.name))
-            if let d = result.date { date = d }
-            firmNames = result.routeFirms
-            scanLines = result.lines
-            status = result.routeFirms.isEmpty
+            if let d = result.date { draft.date = d }
+            draft.firmNames = result.routeFirms
+            draft.scanLines = result.lines
+            draft.status = result.routeFirms.isEmpty
                 ? "Nie znalazłem kolumny „Trasa”. Dotknij nazw firm z dokumentu poniżej albo wpisz je."
                 : "Firmy z kolumny „Trasa”: \(result.routeFirms.count). Sprawdź listę i datę."
         } catch {
-            status = "Nie udało się odczytać dokumentu: \(error.localizedDescription)"
+            // Okno schowane w trakcie skanu – po powrocie skan ruszy od nowa.
+            if Task.isCancelled { draft.loaded = false; return }
+            draft.status = "Nie udało się odczytać dokumentu: \(error.localizedDescription)"
             AppLog.log("Skan: błąd OCR: \(error.localizedDescription)")
         }
-        if !firmNames.isEmpty && missing.isEmpty {
+        if !draft.firmNames.isEmpty && missing.isEmpty {
             working = false
             await computeRoute()
         }
@@ -229,30 +216,30 @@ struct TripEditorView: View {
 
     private func computeRoute() async {
         let byKey = firmsByKey
-        let stops = firmNames.compactMap { byKey[Firm.key(for: $0)] }
-        guard !stops.isEmpty, stops.count == firmNames.count else { return }
+        let stops = draft.firmNames.compactMap { byKey[Firm.key(for: $0)] }
+        guard !stops.isEmpty, stops.count == draft.firmNames.count else { return }
         working = true
         defer { working = false }
         let optimize = !keepOrder
-        status = optimize ? "Układam trasę i liczę kilometry…" : "Liczę kilometry we wpisanej kolejności…"
+        draft.status = optimize ? "Układam trasę i liczę kilometry…" : "Liczę kilometry we wpisanej kolejności…"
         do {
-            let names = firmNames
+            let names = draft.firmNames
             let result = try await TomTomService().route(
                 depot: Coordinate(lat: depotLat, lon: depotLon),
                 stops: stops.map { Coordinate(lat: $0.lat, lon: $0.lon) },
                 optimize: optimize
             )
             // Lista albo przełącznik mogły się zmienić w trakcie zapytania – wtedy wynik jest nieaktualny.
-            guard names == firmNames, optimize == !keepOrder else { return }
-            firmNames = result.order.map { names[$0] }
-            kmText = Fmt.km((Double(result.lengthMeters) / 1000).rounded())
-            durationSeconds = result.travelSeconds
-            status = optimize
-                ? "Trasa ułożona: \(kmText) km według TomTom."
-                : "Trasa we wpisanej kolejności: \(kmText) km według TomTom."
-            AppLog.log("Trasa\(optimize ? "" : " (bez optymalizacji)"): \(firmNames.joined(separator: " → ")) = \(kmText) km")
+            guard names == draft.firmNames, optimize == !keepOrder else { return }
+            draft.firmNames = result.order.map { names[$0] }
+            draft.kmText = Fmt.km((Double(result.lengthMeters) / 1000).rounded())
+            draft.durationSeconds = result.travelSeconds
+            draft.status = optimize
+                ? "Trasa ułożona: \(draft.kmText) km według TomTom."
+                : "Trasa we wpisanej kolejności: \(draft.kmText) km według TomTom."
+            AppLog.log("Trasa\(optimize ? "" : " (bez optymalizacji)"): \(draft.firmNames.joined(separator: " → ")) = \(draft.kmText) km")
         } catch {
-            status = "Nie udało się policzyć trasy: \(error.localizedDescription). Możesz wpisać kilometry ręcznie."
+            draft.status = "Nie udało się policzyć trasy: \(error.localizedDescription). Możesz wpisać kilometry ręcznie."
             AppLog.log("Trasa: błąd TomTom: \(error.localizedDescription)")
         }
     }
@@ -260,12 +247,12 @@ struct TripEditorView: View {
     private func save() {
         guard let km else { return }
         if let trip {
-            trip.date = date
-            trip.firmNames = firmNames
+            trip.date = draft.date
+            trip.firmNames = draft.firmNames
             trip.km = km
-            trip.durationSeconds = durationSeconds
+            trip.durationSeconds = draft.durationSeconds
         } else {
-            context.insert(Trip(date: date, firmNames: firmNames, km: km, durationSeconds: durationSeconds))
+            context.insert(Trip(date: draft.date, firmNames: draft.firmNames, km: km, durationSeconds: draft.durationSeconds))
         }
         do {
             try context.save()
@@ -273,8 +260,9 @@ struct TripEditorView: View {
             AppLog.log("Zapis kursu: błąd: \(error.localizedDescription)")
         }
         let total = (try? context.fetchCount(FetchDescriptor<Trip>())) ?? -1
-        AppLog.log("\(trip == nil ? "Nowy kurs" : "Zmieniony kurs") \(Fmt.full(date)): \(firmNames.joined(separator: ", ")), \(Fmt.km(km)) km. Kursów w bazie: \(total)")
-        onSaved(date)
+        AppLog.log("\(trip == nil ? "Nowy kurs" : "Zmieniony kurs") \(Fmt.full(draft.date)): \(draft.firmNames.joined(separator: ", ")), \(Fmt.km(km)) km. Kursów w bazie: \(total)")
+        draft.finished = true
+        onSaved(draft.date)
         dismiss()
     }
 }
