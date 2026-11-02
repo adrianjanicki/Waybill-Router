@@ -130,7 +130,9 @@ struct TripEditorView: View {
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Zapisz", action: save).disabled(draft.firmNames.isEmpty || (km ?? 0) <= 0)
+                    Button("Zapisz", action: save)
+                        .saveButtonStyle()
+                        .disabled(draft.firmNames.isEmpty || (km ?? 0) <= 0)
                 }
             }
             .confirmationDialog("Zamknąć bez zapisywania?", isPresented: $confirmDiscard, titleVisibility: .visible) {
@@ -324,7 +326,9 @@ struct FirmAddressSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Anuluj") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) { Button("Zapisz", action: save).disabled(hit == nil) }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Zapisz", action: save).saveButtonStyle().disabled(hit == nil)
+                }
             }
             .interactiveDismissDisabled(hit != nil)
             .onAppear { if query.isEmpty { query = initialAddress } }

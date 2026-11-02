@@ -40,19 +40,8 @@ struct KartyView: View {
             if trips.isEmpty {
                 Text("Karty pojawią się po dodaniu kursów w tym miesiącu.").foregroundStyle(.secondary)
             } else {
-                Section {
-                    if let pdfURL {
-                        ShareLink(item: pdfURL) { Label("Karty drogowe (PDF)", systemImage: "doc.richtext") }
-                    }
-                    if let docxURL {
-                        ShareLink(item: docxURL) { Label("Karty drogowe do edycji (Word)", systemImage: "doc.text") }
-                    }
-                    if let csvURL {
-                        ShareLink(item: csvURL) { Label("Zestawienie do Excela (CSV)", systemImage: "tablecells") }
-                    }
-                    if let error { Text(error).foregroundStyle(.red) }
-                } footer: {
-                    Text("Stuknij wiersz karty, żeby poprawić datę, opis trasy lub kilometry. Plik Word otworzysz i zmienisz dowolnie w Word lub Pages.")
+                if let error {
+                    Section { Text(error).foregroundStyle(.red) }
                 }
 
                 Section {
@@ -68,6 +57,8 @@ struct KartyView: View {
                     }
                 } header: {
                     Text("Nagłówek karty")
+                } footer: {
+                    Text("Stuknij wiersz karty, żeby poprawić datę, opis trasy lub kilometry. Gotowe karty wyślesz przyciskiem Eksportuj (PDF, Word, CSV).")
                 }
             }
             ForEach(Array(cards.enumerated()), id: \.offset) { index, card in
@@ -99,6 +90,9 @@ struct KartyView: View {
             }
         }
         .navigationTitle(Fmt.month(month))
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) { exportMenu }
+        }
         .onChange(of: edits) { _, new in new.save(month: month) }
         .task(id: exportKey) { export() }
         .sheet(item: $editing) { target in
@@ -113,6 +107,25 @@ struct KartyView: View {
                             titleVisibility: .visible) {
             Button("Cofnij poprawki", role: .destructive) { edits = KartaEdits() }
         }
+    }
+
+    /// Jedno menu „Eksportuj” zamiast trzech osobnych przycisków.
+    private var exportMenu: some View {
+        Menu {
+            if let pdfURL {
+                ShareLink(item: pdfURL) { Label("PDF – do wydruku", systemImage: "doc.richtext") }
+            }
+            if let docxURL {
+                ShareLink(item: docxURL) { Label("Word – do edycji", systemImage: "doc.text") }
+            }
+            if let csvURL {
+                ShareLink(item: csvURL) { Label("CSV – do Excela", systemImage: "tablecells") }
+            }
+        } label: {
+            Label("Eksportuj", systemImage: "square.and.arrow.up")
+                .labelStyle(.titleAndIcon)
+        }
+        .disabled(trips.isEmpty || pdfURL == nil)
     }
 
     private func export() {
@@ -180,7 +193,7 @@ private struct KartaRowEditor: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Anuluj") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Zapisz", action: save).disabled(km == nil)
+                    Button("Zapisz", action: save).saveButtonStyle().disabled(km == nil)
                 }
             }
             .onAppear {
@@ -242,6 +255,7 @@ private struct KartaHeaderEditor: View {
                         edits.registration = registration == defaults.registration ? nil : registration
                         dismiss()
                     }
+                    .saveButtonStyle()
                 }
             }
             .onAppear {

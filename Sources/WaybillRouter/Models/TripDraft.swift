@@ -32,4 +32,10 @@ final class TripDraft {
         let firms = firmNames.map { $0.uppercased() }.joined(separator: ", ")
         return kmText.isEmpty ? firms : "\(firms) · \(kmText) km"
     }
+
+    /// Bardzo krótki opis na szklaną kapsułę, np. „2 firmy · 84 km”.
+    var shortSummary: String {
+        let firms = firmNames.isEmpty ? "Bez firm" : Plural.pl(firmNames.count, "firma", "firmy", "firm")
+        return kmText.isEmpty ? firms : "\(firms) · \(kmText) km"
+    }
 }
