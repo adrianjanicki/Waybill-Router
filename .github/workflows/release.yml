@@ -18,6 +18,13 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Xcode 26 (Liquid Glass)
+        # Szkło z iOS 26 wymaga SDK iOS 26; bierzemy najnowszy Xcode 26, jeśli jest na maszynie.
+        run: |
+          x=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort | tail -n 1 || true)
+          if [ -n "$x" ]; then sudo xcode-select -s "$x"; else echo "UWAGA: brak Xcode 26 – build bez Liquid Glass"; fi
+          xcodebuild -version
+
       - name: Wersja
         id: v
         run: |

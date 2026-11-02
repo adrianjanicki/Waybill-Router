@@ -24,6 +24,7 @@ struct EditorTarget: Identifiable {
 struct ContentView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: [SortDescriptor(\Trip.date), SortDescriptor(\Trip.created)]) private var allTrips: [Trip]
+    @Query private var firms: [Firm]
     @AppStorage(SettingsKey.rate) private var rate = 0.0
 
     @State private var month = Date().startOfMonth
@@ -32,12 +33,17 @@ struct ContentView: View {
     @State private var editor: EditorTarget?
     @State private var tripToDelete: Trip?
     @State private var scannedImages: [UIImage] = []
-    /// Kursy schowane przeciągnięciem w dół – czekają na pasku na dole.
+    /// Kursy schowane przeciągnięciem w dół – czekają w kapsule na dole.
     @State private var parked: [EditorTarget] = []
     @State private var parkedToDiscard: EditorTarget?
+    /// Lista szkiców (gdy schowanych kursów jest kilka).
+    @State private var showDrafts = false
+    /// Szkic wybrany z listy – otwieramy go dopiero po zamknięciu listy.
+    @State private var draftToOpen: EditorTarget?
 
     private var monthTrips: [Trip] { allTrips.filter { $0.date.isSameMonth(as: month) } }
     private var monthKm: Double { monthTrips.reduce(0) { $0 + $1.km } }
+    private var knownFirmKeys: Set<String> { Set(firms.map(\.key)) }
 
     /// Inne miesiące, w których są kursy (żeby kurs zapisany z inną datą nie „znikał”).
     private var otherMonths: [MonthSummary] {
@@ -59,52 +65,42 @@ struct ContentView: View {
             List {
                 Section { summary }
 
-                Section {
-                    Button {
-                        if DocumentScanner.isSupported { showScanner = true }
-                    } label: {
-                        Label("Skanuj listę przewozową", systemImage: "doc.viewfinder")
-                            .font(.title3.weight(.semibold))
-                            .frame(maxWidth: .infinity, minHeight: 56)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.orange)
-                    .disabled(!DocumentScanner.isSupported)
-                    .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
+                Section { actions }
                     .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
 
-                    PhotosPicker(selection: $photoItem, matching: .images) {
-                        Label("Wybierz zdjęcie z galerii", systemImage: "photo")
-                    }
-                    Button {
-                        editor = EditorTarget(date: newTripDate)
-                    } label: {
-                        Label("Dodaj kurs ręcznie", systemImage: "square.and.pencil")
-                    }
-                }
-
-                Section("Kursy – \(Fmt.month(month))") {
+                Section {
                     if monthTrips.isEmpty {
                         Text("Brak kursów w tym miesiącu. Zeskanuj list przewozowy, żeby dodać pierwszy.")
                             .foregroundStyle(.secondary)
                     }
                     ForEach(monthTrips) { trip in
-                        Button { editor = EditorTarget(trip: trip) } label: { TripRow(trip: trip) }
-                            .foregroundStyle(.primary)
-                            .swipeActions {
-                                Button("Usuń", role: .destructive) { tripToDelete = trip }
-                            }
+                        Button { editor = EditorTarget(trip: trip) } label: {
+                            TripRow(trip: trip, needsAttention: needsAttention(trip))
+                        }
+                        .foregroundStyle(.primary)
+                        .swipeActions {
+                            Button("Usuń", role: .destructive) { tripToDelete = trip }
+                        }
+                    }
+                } header: {
+                    HStack {
+                        Text("Kursy")
+                        Spacer()
+                        if !monthTrips.isEmpty {
+                            Text(Plural.pl(monthTrips.count, "kurs", "kursy", "kursów")).textCase(nil)
+                        }
                     }
                 }
 
                 if !otherMonths.isEmpty {
                     Section("Inne miesiące z kursami") {
                         ForEach(otherMonths) { item in
-                            Button { month = item.month } label: {
+                            Button { withAnimation { month = item.month } } label: {
                                 HStack {
                                     Text(Fmt.month(item.month))
                                     Spacer()
-                                    Text("\(item.count) kurs. · \(Fmt.km(item.km)) km")
+                                    Text("\(Plural.pl(item.count, "kurs", "kursy", "kursów")) · \(Fmt.km(item.km)) km")
                                         .monospacedDigit().foregroundStyle(.secondary)
                                 }
                             }
@@ -114,7 +110,12 @@ struct ContentView: View {
                 }
             }
             .safeAreaInset(edge: .bottom) {
-                if !parked.isEmpty { parkedBar }
+                if !parked.isEmpty {
+                    returnCapsule
+                        .padding(.horizontal)
+                        .padding(.bottom, 8)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
             .navigationTitle("Karta drogowa")
             .toolbar {
@@ -149,12 +150,28 @@ struct ContentView: View {
                     month = savedDate.startOfMonth
                 }
                 .onDisappear {
-                    // Przeciągnięte w dół bez zapisu – chowamy na pasek zamiast gubić.
+                    // Przeciągnięte w dół bez zapisu – chowamy do kapsuły zamiast gubić.
                     if target.shouldPark && !parked.contains(where: { $0.id == target.id }) {
                         withAnimation { parked.append(target) }
                         AppLog.log("Kurs schowany na pasek: \(target.draft.summary)")
                     }
                 }
+            }
+            .sheet(isPresented: $showDrafts, onDismiss: {
+                // Edytor otwieramy dopiero po zamknięciu listy szkiców.
+                if let t = draftToOpen {
+                    draftToOpen = nil
+                    reopen(t)
+                }
+            }) {
+                DraftsSheet(parked: $parked) { target in
+                    draftToOpen = target
+                    showDrafts = false
+                }
+                .presentationDetents([.medium, .large])
+            }
+            .onChange(of: parked.count) { _, count in
+                if count < 2 && showDrafts && draftToOpen == nil { showDrafts = false }
             }
             .onAppear {
                 AppLog.log("Start aplikacji. Kursów w bazie: \(allTrips.count)")
@@ -173,10 +190,7 @@ struct ContentView: View {
                 get: { parkedToDiscard != nil }, set: { if !$0 { parkedToDiscard = nil } }
             ), titleVisibility: .visible) {
                 Button("Odrzuć", role: .destructive) {
-                    if let t = parkedToDiscard {
-                        AppLog.log("Odrzucono schowany kurs: \(t.draft.summary)")
-                        withAnimation { parked.removeAll { $0.id == t.id } }
-                    }
+                    if let t = parkedToDiscard { discard(t, from: $parked) }
                     parkedToDiscard = nil
                 }
             } message: {
@@ -197,55 +211,205 @@ struct ContentView: View {
         }
     }
 
-    /// Pasek z kursami schowanymi gestem – dotknięcie otwiera kurs z powrotem.
-    private var parkedBar: some View {
-        VStack(spacing: 8) {
-            ForEach(parked) { target in
-                HStack(spacing: 12) {
-                    Button {
-                        parked.removeAll { $0.id == target.id }
-                        editor = target
-                    } label: {
-                        HStack {
-                            Image(systemName: "chevron.up.circle.fill").font(.title2)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(target.trip == nil ? "Niezapisany kurs – wróć" : "Niezapisane zmiany – wróć")
-                                    .font(.subheadline.weight(.semibold))
-                                Text(target.draft.summary).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                            }
-                            Spacer()
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    Button { parkedToDiscard = target } label: {
-                        Image(systemName: "xmark.circle.fill").font(.title2).foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(12)
-                .background(Color.orange.opacity(0.15), in: RoundedRectangle(cornerRadius: 14))
-            }
-        }
-        .padding(.horizontal)
-        .padding(.vertical, 8)
-        .background(.bar)
+    /// Kurs wymaga uwagi: firma bez zapisanego adresu albo brak kilometrów.
+    private func needsAttention(_ trip: Trip) -> Bool {
+        trip.km <= 0 || trip.firmNames.contains { !knownFirmKeys.contains(Firm.key(for: $0)) }
     }
 
+    private func reopen(_ target: EditorTarget) {
+        parked.removeAll { $0.id == target.id }
+        editor = target
+    }
+
+    // MARK: - Ekran główny
+
     private var summary: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 14) {
             HStack {
-                Button { month = month.addingMonths(-1) } label: { Image(systemName: "chevron.left") }
+                Button { withAnimation { month = month.addingMonths(-1) } } label: {
+                    Image(systemName: "chevron.left").frame(width: 20, height: 20)
+                }
+                .accessibilityLabel("Poprzedni miesiąc")
                 Spacer()
-                Text(Fmt.month(month)).font(.headline)
+                Text(Fmt.month(month)).font(.title3.weight(.semibold))
                 Spacer()
-                Button { month = month.addingMonths(1) } label: { Image(systemName: "chevron.right") }
+                Button { withAnimation { month = month.addingMonths(1) } } label: {
+                    Image(systemName: "chevron.right").frame(width: 20, height: 20)
+                }
+                .accessibilityLabel("Następny miesiąc")
             }
-            .buttonStyle(.borderless)
-            HStack {
+            .secondaryActionStyle()
+            .buttonBorderShape(.circle)
+            .tint(.primary)
+
+            HStack(spacing: 0) {
                 Stat(title: "Kilometry", value: Fmt.km(monthKm))
+                Divider().frame(height: 32)
                 Stat(title: "Kursy", value: "\(monthTrips.count)")
+                Divider().frame(height: 32)
                 Stat(title: "Do zapłaty", value: rate > 0 ? Fmt.money(monthKm * rate) : "—")
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private var actions: some View {
+        VStack(spacing: 10) {
+            Button {
+                if DocumentScanner.isSupported { showScanner = true }
+            } label: {
+                Label("Skanuj list przewozowy", systemImage: "doc.viewfinder")
+                    .font(.title3.weight(.semibold))
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .prominentActionStyle()
+            .controlSize(.large)
+            .tint(.orange)
+            .disabled(!DocumentScanner.isSupported)
+
+            HStack(spacing: 10) {
+                PhotosPicker(selection: $photoItem, matching: .images) {
+                    Label("Galeria", systemImage: "photo.on.rectangle")
+                        .frame(maxWidth: .infinity, minHeight: 28)
+                }
+                Button {
+                    editor = EditorTarget(date: newTripDate)
+                } label: {
+                    Label("Dodaj ręcznie", systemImage: "square.and.pencil")
+                        .frame(maxWidth: .infinity, minHeight: 28)
+                }
+            }
+            .secondaryActionStyle()
+            .controlSize(.large)
+            .tint(.primary)
+            .font(.subheadline.weight(.medium))
+        }
+    }
+
+    // MARK: - Kapsuła „Wróć do kursu”
+
+    /// Szklana kapsuła na dole: jeden szkic – dotknięcie wraca do kursu,
+    /// kilka szkiców – pokazuje ich liczbę i otwiera listę do wyboru.
+    private var returnCapsule: some View {
+        HStack(spacing: 12) {
+            Button {
+                if parked.count == 1, let only = parked.first { reopen(only) } else { showDrafts = true }
+            } label: {
+                HStack(spacing: 12) {
+                    ZStack(alignment: .topTrailing) {
+                        Image(systemName: "arrow.uturn.backward.circle.fill")
+                            .font(.title2)
+                            .foregroundStyle(.orange)
+                        if parked.count > 1 {
+                            Text("\(parked.count)")
+                                .font(.caption2.weight(.bold).monospacedDigit())
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 5).padding(.vertical, 1)
+                                .background(.orange, in: Capsule())
+                                .offset(x: 8, y: -6)
+                        }
+                    }
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Wróć do kursu").font(.subheadline.weight(.semibold))
+                        Text(capsuleDetail)
+                            .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                    if parked.count > 1 {
+                        Image(systemName: "chevron.up").font(.footnote.weight(.semibold)).foregroundStyle(.secondary)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint(parked.count > 1 ? "Otwiera listę niezapisanych kursów" : "Otwiera niezapisany kurs")
+
+            if parked.count == 1, let only = parked.first {
+                Button { parkedToDiscard = only } label: {
+                    Image(systemName: "xmark")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 30, height: 30)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Odrzuć niezapisany kurs")
+            }
+        }
+        .padding(.leading, 14)
+        .padding(.trailing, 10)
+        .padding(.vertical, 10)
+        .glassCapsule()
+    }
+
+    private var capsuleDetail: String {
+        if parked.count == 1, let only = parked.first {
+            return only.trip == nil ? only.draft.shortSummary : "Zmiany · \(only.draft.shortSummary)"
+        }
+        return "\(Plural.pl(parked.count, "szkic", "szkice", "szkiców")) – wybierz z listy"
+    }
+}
+
+/// Odrzucenie schowanego kursu (z kapsuły albo z listy szkiców).
+private func discard(_ target: EditorTarget, from parked: Binding<[EditorTarget]>) {
+    AppLog.log("Odrzucono schowany kurs: \(target.draft.summary)")
+    withAnimation { parked.wrappedValue.removeAll { $0.id == target.id } }
+}
+
+/// Lista kilku niezapisanych kursów – dotknięcie wraca do wybranego.
+private struct DraftsSheet: View {
+    @Binding var parked: [EditorTarget]
+    var onOpen: (EditorTarget) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var toDiscard: EditorTarget?
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(parked) { target in
+                        Button { onOpen(target) } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: target.trip == nil ? "doc.badge.plus" : "pencil.circle")
+                                    .font(.title3)
+                                    .foregroundStyle(.orange)
+                                    .frame(width: 28)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(target.trip == nil ? "Nowy kurs · \(Fmt.dayMonth(target.draft.date))"
+                                                            : "Zmiany w kursie · \(Fmt.dayMonth(target.draft.date))")
+                                        .font(.subheadline.weight(.semibold))
+                                    Text(target.draft.summary)
+                                        .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right").font(.footnote).foregroundStyle(.tertiary)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .foregroundStyle(.primary)
+                        .swipeActions {
+                            Button("Odrzuć", role: .destructive) { toDiscard = target }
+                        }
+                    }
+                } footer: {
+                    Text("Przesuń szkic w lewo, żeby go odrzucić.")
+                }
+            }
+            .navigationTitle("Niezapisane kursy")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Gotowe") { dismiss() } }
+            }
+            .confirmationDialog("Odrzucić niezapisany kurs?", isPresented: Binding(
+                get: { toDiscard != nil }, set: { if !$0 { toDiscard = nil } }
+            ), titleVisibility: .visible) {
+                Button("Odrzuć", role: .destructive) {
+                    if let t = toDiscard { discard(t, from: $parked) }
+                    toDiscard = nil
+                }
+            } message: {
+                Text(toDiscard?.draft.summary ?? "")
             }
         }
     }
@@ -263,24 +427,48 @@ private struct Stat: View {
     var value: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title.uppercased()).font(.caption2).foregroundStyle(.secondary)
+        VStack(spacing: 2) {
             Text(value).font(.title3.monospacedDigit().weight(.semibold))
                 .lineLimit(1).minimumScaleFactor(0.6)
+                .contentTransition(.numericText())
+            Text(title).font(.caption).foregroundStyle(.secondary)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity)
     }
 }
 
+/// Wiersz kursu: data po lewej, firmy w kolejności jazdy, kilometry po prawej.
 private struct TripRow: View {
     var trip: Trip
+    var needsAttention: Bool
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Text(Fmt.dayMonth(trip.date)).font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
-            Text(trip.routeDescription).font(.subheadline)
-            Spacer(minLength: 8)
-            Text("\(Fmt.km(trip.km)) km").font(.subheadline.monospacedDigit().weight(.semibold))
+        HStack(alignment: .center, spacing: 14) {
+            VStack(spacing: 0) {
+                Text(Fmt.day(trip.date)).font(.title3.weight(.semibold).monospacedDigit())
+                Text(Fmt.weekdayShort(trip.date)).font(.caption2).foregroundStyle(.secondary)
+            }
+            .frame(width: 38)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(trip.firmNames.isEmpty ? "—" : trip.firmNames.map { $0.uppercased() }.joined(separator: " → "))
+                    .font(.subheadline.weight(.medium))
+                    .lineLimit(2)
+                if needsAttention {
+                    Label(trip.km <= 0 ? "Brak kilometrów" : "Firma bez adresu", systemImage: "exclamationmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
+                Text(Fmt.km(trip.km)).font(.body.weight(.semibold).monospacedDigit())
+                Text("km").font(.caption).foregroundStyle(.secondary)
+            }
+            .foregroundStyle(trip.km <= 0 ? AnyShapeStyle(Color.orange) : AnyShapeStyle(Color.primary))
         }
+        .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
     }
 }

@@ -1,0 +1,70 @@
+import SwiftUI
+
+/// Liquid Glass (iOS 26) z zapasowym wyglądem dla starszych systemów.
+/// `#if compiler(>=6.2)` – starszy Xcode (bez SDK iOS 26) też to skompiluje,
+/// tylko bez szkła; na iOS 17–18 widać materiał/klasyczne przyciski.
+extension View {
+    /// Szklana kapsuła pływająca nad treścią (np. pasek „Wróć do kursu”).
+    @ViewBuilder
+    func glassCapsule() -> some View {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            self.glassEffect(.regular.interactive(), in: .capsule)
+        } else {
+            materialCapsule()
+        }
+        #else
+        materialCapsule()
+        #endif
+    }
+
+    private func materialCapsule() -> some View {
+        self
+            .background(.regularMaterial, in: Capsule())
+            .overlay(Capsule().strokeBorder(Color.primary.opacity(0.08)))
+            .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
+    }
+
+    /// Główna akcja ekranu – wypełniony przycisk (szkło na iOS 26).
+    @ViewBuilder
+    func prominentActionStyle() -> some View {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            self.buttonStyle(.glassProminent)
+        } else {
+            self.buttonStyle(.borderedProminent)
+        }
+        #else
+        self.buttonStyle(.borderedProminent)
+        #endif
+    }
+
+    /// „Zapisz” w pasku okna – wyraźny, wypełniony przycisk.
+    func saveButtonStyle() -> some View {
+        prominentActionStyle().tint(.orange)
+    }
+
+    /// Akcja drugorzędna – spokojny przycisk (szkło na iOS 26).
+    @ViewBuilder
+    func secondaryActionStyle() -> some View {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            self.buttonStyle(.glass)
+        } else {
+            self.buttonStyle(.bordered)
+        }
+        #else
+        self.buttonStyle(.bordered)
+        #endif
+    }
+}
+
+enum Plural {
+    /// Polska odmiana: 1 firma, 2–4 firmy, 5+ firm (12–14 firm).
+    static func pl(_ n: Int, _ one: String, _ few: String, _ many: String) -> String {
+        if n == 1 { return "\(n) \(one)" }
+        let mod10 = n % 10, mod100 = n % 100
+        if (2...4).contains(mod10) && !(12...14).contains(mod100) { return "\(n) \(few)" }
+        return "\(n) \(many)"
+    }
+}

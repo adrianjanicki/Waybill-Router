@@ -18,6 +18,22 @@ enum Fmt {
         return f.string(from: d)
     }
 
+    /// Dzień miesiąca, np. „05”.
+    static func day(_ d: Date) -> String {
+        let f = DateFormatter()
+        f.locale = pl
+        f.dateFormat = "dd"
+        return f.string(from: d)
+    }
+
+    /// Skrót dnia tygodnia, np. „pon.”.
+    static func weekdayShort(_ d: Date) -> String {
+        let f = DateFormatter()
+        f.locale = pl
+        f.dateFormat = "EEE"
+        return f.string(from: d)
+    }
+
     static func full(_ d: Date) -> String {
         let f = DateFormatter()
         f.locale = pl
