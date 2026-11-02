@@ -27,12 +27,22 @@ struct TripEditorView: View {
     @State private var addressFor: AddressTarget?
     @State private var loaded = false
     @State private var editMode: EditMode = .inactive
+    @State private var confirmDiscard = false
 
     private var firmsByKey: [String: Firm] {
         Dictionary(firms.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
     }
     private var missing: [String] { firmNames.filter { firmsByKey[Firm.key(for: $0)] == nil } }
     private var km: Double? { Double(kmText.replacingOccurrences(of: ",", with: ".")) }
+
+    /// Czy jest coś, co by przepadło po zamknięciu bez zapisu.
+    private var hasChanges: Bool {
+        if !newFirm.trimmingCharacters(in: .whitespaces).isEmpty { return true }
+        if let trip {
+            return trip.date != date || trip.firmNames != firmNames || Fmt.km(trip.km) != kmText
+        }
+        return !images.isEmpty || !firmNames.isEmpty || !kmText.isEmpty
+    }
 
     var body: some View {
         NavigationStack {
@@ -128,10 +138,25 @@ struct TripEditorView: View {
             .navigationTitle(trip == nil ? "Nowy kurs" : "Edytuj kurs")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Anuluj") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Anuluj") {
+                        if hasChanges { confirmDiscard = true } else { dismiss() }
+                    }
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Zapisz", action: save).disabled(firmNames.isEmpty || (km ?? 0) <= 0)
                 }
+            }
+            // Przypadkowe przesunięcie palcem w dół nie zamyka kursu z niezapisanymi danymi.
+            .interactiveDismissDisabled(hasChanges || working)
+            .confirmationDialog("Zamknąć bez zapisywania?", isPresented: $confirmDiscard, titleVisibility: .visible) {
+                Button("Odrzuć zmiany", role: .destructive) {
+                    AppLog.log("Edytor kursu zamknięty bez zapisu: \(firmNames.joined(separator: ", "))")
+                    dismiss()
+                }
+                Button("Wróć do edycji", role: .cancel) {}
+            } message: {
+                Text("Firmy i kilometry z tego kursu nie zostaną zapisane.")
             }
             .sheet(item: $addressFor) { target in
                 FirmAddressSheet(name: target.name, initialAddress: target.name) {
@@ -313,6 +338,7 @@ struct FirmAddressSheet: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Anuluj") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) { Button("Zapisz", action: save).disabled(hit == nil) }
             }
+            .interactiveDismissDisabled(hit != nil)
             .onAppear { if query.isEmpty { query = initialAddress } }
             .task(id: query) {
                 // Krótka pauza, żeby nie pytać TomTom o każdą literę.
