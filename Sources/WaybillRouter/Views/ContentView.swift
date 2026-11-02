@@ -13,8 +13,11 @@ struct EditorTarget: Identifiable {
     let draft = TripDraft()
 
     /// Czy po zamknięciu okna jest co przywracać.
+    /// Nowy kurs (skan, galeria, ręczny) wraca na pasek zawsze, gdy nie został zapisany ani anulowany;
+    /// edycja zapisanego kursu – tylko gdy coś w nim zmieniono.
     var shouldPark: Bool {
-        draft.loaded && !draft.finished && draft.hasChanges(trip: trip, images: images)
+        guard draft.loaded, !draft.finished else { return false }
+        return trip == nil || draft.hasChanges(trip: trip, images: images)
     }
 }
 

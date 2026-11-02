@@ -126,7 +126,7 @@ struct TripEditorView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Anuluj") {
-                        if hasChanges { confirmDiscard = true } else { dismiss() }
+                        if hasChanges { confirmDiscard = true } else { draft.finished = true; dismiss() }
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
