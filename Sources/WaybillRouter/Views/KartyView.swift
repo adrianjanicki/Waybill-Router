@@ -37,63 +37,102 @@ struct KartyView: View {
 
     var body: some View {
         List {
+            VStack(spacing: 12) {
+                Text(Fmt.month(month)).font(.headline)
+                    .padding(.horizontal, 24).padding(.vertical, 12)
+                    .glass(in: Capsule(), interactive: false)
+                Text("\(Fmt.km(rows.reduce(0) { $0 + $1.km })) km")
+                    .font(.largeTitle.bold().monospacedDigit())
+                    .minimumScaleFactor(0.5).lineLimit(1)
+                Text("\(Plural.pl(rows.count, "kurs", "kursy", "kursów")) · \(Plural.pl(cards.count, "karta", "karty", "kart"))")
+                    .font(.subheadline).foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 20)
+            .waybillPanelRow()
+
             if trips.isEmpty {
-                Text("Karty pojawią się po dodaniu kursów w tym miesiącu.").foregroundStyle(.secondary)
+                ContentUnavailableView("Brak kart", systemImage: "doc.text",
+                                       description: Text("Dodaj kursy w tym miesiącu, aby przygotować karty drogowe."))
+                    .waybillPanelRow()
             } else {
                 if let error {
-                    Section { Text(error).foregroundStyle(.red) }
+                    Text(error).foregroundStyle(.red).waybillPanel().waybillPanelRow()
                 }
-
-                Section {
-                    Button { editingHeader = true } label: {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(header.carrier).font(.subheadline.weight(.semibold))
-                            Text("\(header.car) · \(header.registration)").font(.footnote).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack {
+                        WaybillPanelTitle(title: "Dane na karcie", icon: "truck.box")
+                        Spacer()
+                        Button { editingHeader = true } label: {
+                            Image(systemName: "pencil").frame(width: 44, height: 44)
                         }
+                        .secondaryActionStyle()
+                        .tint(.white)
+                        .accessibilityLabel("Edytuj nagłówek karty")
                     }
-                    .foregroundStyle(.primary)
+                    Text(header.carrier).font(.headline)
+                    Label(header.car, systemImage: "car.side").font(.subheadline)
+                    Text(header.registration).font(.subheadline.monospaced().weight(.semibold))
+                        .padding(.horizontal, 12).padding(.vertical, 8)
+                        .background(Color.primary.opacity(0.05), in: Capsule())
                     if !edits.isEmpty {
+                        Divider()
                         Button("Cofnij wszystkie poprawki", role: .destructive) { confirmReset = true }
+                            .font(.subheadline)
                     }
-                } header: {
-                    Text("Nagłówek karty")
-                } footer: {
-                    Text("Stuknij wiersz karty, żeby poprawić datę, opis trasy lub kilometry. Gotowe karty wyślesz przyciskiem Eksportuj (PDF, Word, CSV).")
                 }
+                .waybillPanel().waybillPanelRow()
             }
+
             ForEach(Array(cards.enumerated()), id: \.offset) { index, card in
                 Section {
                     ForEach(Array(card.enumerated()), id: \.offset) { j, row in
                         Button {
                             editing = RowTarget(trip: trips[index * KartaExport.tripsPerCard + j])
                         } label: {
-                            HStack(alignment: .top, spacing: 10) {
-                                Text("\(j + 1).").monospacedDigit().foregroundStyle(.secondary)
-                                Text(Fmt.dayMonth(row.date)).font(.body.weight(.bold)).monospacedDigit()
-                                Text(row.description).font(.footnote)
-                                Spacer(minLength: 4)
-                                if row.edited {
-                                    Image(systemName: "pencil").font(.caption).foregroundStyle(.orange)
+                            VStack(alignment: .leading, spacing: 12) {
+                                HStack {
+                                    Text(Fmt.dayMonth(row.date)).font(.headline.monospacedDigit())
+                                    Text("· \(j + 1)").font(.caption).foregroundStyle(.secondary)
+                                    Spacer()
+                                    if row.edited {
+                                        Image(systemName: "pencil").foregroundStyle(.orange)
+                                            .accessibilityLabel("Wiersz poprawiony")
+                                    }
+                                    Text("\(Fmt.km(row.km)) km").font(.headline.monospacedDigit())
                                 }
-                                Text(Fmt.km(row.km)).font(.body.weight(.bold)).monospacedDigit()
+                                Text(row.description)
+                                    .font(.subheadline)
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
-                            .padding(.vertical, 2)
+                            .foregroundStyle(.primary)
+                            .waybillPanel()
                         }
-                        .foregroundStyle(.primary)
+                        .buttonStyle(.plain)
+                        .waybillPanelRow()
+                        .accessibilityHint("Edytuj datę, opis trasy i kilometry")
                     }
                 } header: {
-                    HStack {
-                        Text("Karta \(index + 1): \(Fmt.dayMonth(card.first!.date)) – \(Fmt.dayMonth(card.last!.date))")
-                        Spacer()
-                        Text("\(Fmt.km(card.reduce(0) { $0 + $1.km })) km")
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Karta \(index + 1)").font(.title3.weight(.semibold))
+                        Text("\(Fmt.dayMonth(card.first!.date)) – \(Fmt.dayMonth(card.last!.date)) · \(Fmt.km(card.reduce(0) { $0 + $1.km })) km")
+                            .font(.caption)
                     }
+                    .textCase(nil)
                 }
             }
         }
+        .listStyle(.plain)
         .appScreen()
-        .navigationTitle(Fmt.month(month))
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) { exportMenu }
+        .toolbar(.visible, for: .navigationBar)
+        .navigationTitle("Karty drogowe")
+        .navigationBarTitleDisplayMode(.inline)
+        .safeAreaInset(edge: .bottom) {
+            if !trips.isEmpty {
+                exportMenu
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 8)
+            }
         }
         .onChange(of: edits) { _, new in new.save(month: month) }
         .task(id: exportKey) { export() }
@@ -126,7 +165,12 @@ struct KartyView: View {
         } label: {
             Label("Eksportuj", systemImage: "square.and.arrow.up")
                 .labelStyle(.titleAndIcon)
+                .font(.headline)
+                .frame(maxWidth: .infinity, minHeight: 44)
         }
+        .prominentActionStyle()
+        .tint(.orange)
+        .buttonBorderShape(.capsule)
         .disabled(trips.isEmpty || pdfURL == nil)
     }
 
@@ -190,6 +234,7 @@ private struct KartaRowEditor: View {
                     Text("Zmiany dotyczą tylko karty drogowej (PDF, Word, CSV). Sam kurs i jego trasa zostają bez zmian.")
                 }
             }
+            .appScreen()
             .navigationTitle("Wiersz karty")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -246,6 +291,7 @@ private struct KartaHeaderEditor: View {
                     }
                 }
             }
+            .appScreen()
             .navigationTitle("Nagłówek karty")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
