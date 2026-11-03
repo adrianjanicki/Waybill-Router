@@ -130,7 +130,7 @@ struct ContentView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
-            .background { HomeBackground() }
+            .background { AppBackground() }
             .safeAreaInset(edge: .bottom) {
                 VStack(spacing: 10) {
                     if !parked.isEmpty {
@@ -549,21 +549,6 @@ private struct TripRow: View {
         .frame(maxWidth: .infinity, minHeight: 92)
         .tripCardBackground()
         .accessibilityElement(children: .combine)
-    }
-}
-
-/// Ciemne tło z ciepłą pomarańczową poświatą od dołu.
-private struct HomeBackground: View {
-    var body: some View {
-        ZStack {
-            LinearGradient(colors: [Color(white: 0.09), Color(white: 0.04)],
-                           startPoint: .top, endPoint: .bottom)
-            RadialGradient(colors: [Color.orange.opacity(0.30), Color.orange.opacity(0.08), .clear],
-                           center: .bottom, startRadius: 10, endRadius: 520)
-            RadialGradient(colors: [Color.orange.opacity(0.07), .clear],
-                           center: .top, startRadius: 0, endRadius: 360)
-        }
-        .ignoresSafeArea()
     }
 }
 

@@ -67,16 +67,17 @@ struct KartyView: View {
                         Button {
                             editing = RowTarget(trip: trips[index * KartaExport.tripsPerCard + j])
                         } label: {
-                            HStack(alignment: .top) {
+                            HStack(alignment: .top, spacing: 10) {
                                 Text("\(j + 1).").monospacedDigit().foregroundStyle(.secondary)
-                                Text(Fmt.dayMonth(row.date)).monospacedDigit()
+                                Text(Fmt.dayMonth(row.date)).font(.body.weight(.bold)).monospacedDigit()
                                 Text(row.description).font(.footnote)
-                                Spacer()
+                                Spacer(minLength: 4)
                                 if row.edited {
                                     Image(systemName: "pencil").font(.caption).foregroundStyle(.orange)
                                 }
-                                Text(Fmt.km(row.km)).monospacedDigit()
+                                Text(Fmt.km(row.km)).font(.body.weight(.bold)).monospacedDigit()
                             }
+                            .padding(.vertical, 2)
                         }
                         .foregroundStyle(.primary)
                     }
@@ -89,6 +90,7 @@ struct KartyView: View {
                 }
             }
         }
+        .appScreen()
         .navigationTitle(Fmt.month(month))
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) { exportMenu }

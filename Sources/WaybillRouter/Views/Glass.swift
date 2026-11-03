@@ -92,3 +92,29 @@ extension View {
             .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
     }
 }
+
+/// Ciemne tło z ciepłą pomarańczową poświatą od dołu.
+struct AppBackground: View {
+    var body: some View {
+        ZStack {
+            LinearGradient(colors: [Color(white: 0.09), Color(white: 0.04)],
+                           startPoint: .top, endPoint: .bottom)
+            RadialGradient(colors: [Color.orange.opacity(0.30), Color.orange.opacity(0.08), .clear],
+                           center: .bottom, startRadius: 10, endRadius: 520)
+            RadialGradient(colors: [Color.orange.opacity(0.07), .clear],
+                           center: .top, startRadius: 0, endRadius: 360)
+        }
+        .ignoresSafeArea()
+    }
+}
+
+extension View {
+    /// Wspólny wygląd ekranów z listą (Karty, Ustawienia, Dziennik):
+    /// to samo ciemne tło z poświatą co ekran główny, ciemne karty sekcji, pomarańczowy akcent.
+    func appScreen() -> some View {
+        self
+            .scrollContentBackground(.hidden)
+            .background { AppBackground() }
+            .tint(.orange)
+    }
+}

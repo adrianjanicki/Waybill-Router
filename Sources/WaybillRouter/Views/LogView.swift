@@ -14,6 +14,7 @@ struct LogView: View {
                 .padding()
         }
         .defaultScrollAnchor(.bottom)
+        .appScreen()
         .navigationTitle("Dziennik zdarzeń")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
