@@ -48,6 +48,24 @@ enum Fmt {
         return f.string(from: d).capitalized(with: pl)
     }
 
+    /// Nagłówek dnia: „Dziś”, „Wczoraj”, „Jutro” albo np. „Środa, 5 listopada”.
+    static func dayTitle(_ d: Date) -> String {
+        let cal = Calendar.current
+        if cal.isDateInToday(d) { return "Dziś" }
+        if cal.isDateInYesterday(d) { return "Wczoraj" }
+        if cal.isDateInTomorrow(d) { return "Jutro" }
+        return weekdayDate(d)
+    }
+
+    /// Np. „Środa, 5 listopada”.
+    static func weekdayDate(_ d: Date) -> String {
+        let f = DateFormatter()
+        f.locale = pl
+        f.dateFormat = "EEEE, d MMMM"
+        let s = f.string(from: d)
+        return s.prefix(1).uppercased(with: pl) + s.dropFirst()
+    }
+
     static func duration(_ seconds: Int) -> String {
         let h = seconds / 3600, m = (seconds % 3600) / 60
         return h > 0 ? "\(h) h \(m) min" : "\(m) min"
@@ -61,6 +79,16 @@ extension Date {
 
     func addingMonths(_ n: Int) -> Date {
         Calendar.current.date(byAdding: .month, value: n, to: self) ?? self
+    }
+
+    var startOfDay: Date { Calendar.current.startOfDay(for: self) }
+
+    func addingDays(_ n: Int) -> Date {
+        Calendar.current.date(byAdding: .day, value: n, to: self) ?? self
+    }
+
+    func isSameDay(as other: Date) -> Bool {
+        Calendar.current.isDate(self, inSameDayAs: other)
     }
 
     func isSameMonth(as other: Date) -> Bool {
