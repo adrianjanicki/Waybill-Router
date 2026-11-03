@@ -42,6 +42,8 @@ struct ContentView: View {
     @State private var draftToOpen: EditorTarget?
 
     private var monthTrips: [Trip] { allTrips.filter { $0.date.isSameMonth(as: month) } }
+    /// Na liście kursów najnowszy na górze (data malejąco, w tym samym dniu ostatnio dodany pierwszy).
+    private var monthTripsNewestFirst: [Trip] { monthTrips.reversed() }
     private var monthKm: Double { monthTrips.reduce(0) { $0 + $1.km } }
     private var knownFirmKeys: Set<String> { Set(firms.map(\.key)) }
 
@@ -74,7 +76,7 @@ struct ContentView: View {
                         Text("Brak kursów w tym miesiącu. Zeskanuj list przewozowy, żeby dodać pierwszy.")
                             .foregroundStyle(.secondary)
                     }
-                    ForEach(monthTrips) { trip in
+                    ForEach(monthTripsNewestFirst) { trip in
                         Button { editor = EditorTarget(trip: trip) } label: {
                             TripRow(trip: trip, needsAttention: needsAttention(trip))
                         }
