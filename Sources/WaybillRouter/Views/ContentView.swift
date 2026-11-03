@@ -33,6 +33,8 @@ struct ContentView: View {
     @State private var day = Date().startOfDay
     /// Kierunek ostatniej zmiany dnia – do animacji wjazdu kart.
     @State private var dayStep = 1
+    /// Kiedy palec ostatnio przesuwał dzień w bok – tuż potem puszczenie palca na karcie nie otwiera kursu.
+    @State private var lastDaySwipe = Date.distantPast
     @State private var showScanner = false
     @State private var showKarty = false
     @State private var showSettings = false
@@ -394,11 +396,16 @@ struct ContentView: View {
 
     /// Przesunięcie w lewo – następny dzień, w prawo – poprzedni.
     private var daySwipe: some Gesture {
-        DragGesture(minimumDistance: 24)
+        DragGesture(minimumDistance: 12)
+            .onChanged { value in
+                let dx = value.translation.width, dy = value.translation.height
+                if abs(dx) > 12, abs(dx) > abs(dy) { lastDaySwipe = .now }
+            }
             .onEnded { value in
                 let dx = value.translation.width, dy = value.translation.height
-                guard abs(dx) > 60, abs(dx) > abs(dy) * 1.5 else { return }
-                showDay(day.addingDays(dx < 0 ? 1 : -1))
+                if abs(dx) > 60, abs(dx) > abs(dy) * 1.5 {
+                    showDay(day.addingDays(dx < 0 ? 1 : -1))
+                }
             }
     }
 
@@ -418,7 +425,11 @@ struct ContentView: View {
                     .tripCardBackground()
             }
             ForEach(dayTrips) { trip in
-                Button { editor = EditorTarget(trip: trip) } label: {
+                Button {
+                    // Przesunięcie palcem po karcie zmienia dzień, a nie otwiera kursu.
+                    guard Date().timeIntervalSince(lastDaySwipe) > 0.4 else { return }
+                    editor = EditorTarget(trip: trip)
+                } label: {
                     TripRow(trip: trip, needsAttention: needsAttention(trip))
                 }
                 .buttonStyle(CardPressStyle())
