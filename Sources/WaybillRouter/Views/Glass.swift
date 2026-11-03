@@ -68,3 +68,53 @@ enum Plural {
         return "\(n) \(many)"
     }
 }
+
+extension View {
+    /// Szkło w dowolnym kształcie (okrągłe przyciski, karty, dok).
+    /// Na starszych systemach – materiał z delikatną ramką.
+    @ViewBuilder
+    func glass<S: Shape>(in shape: S, interactive: Bool = true) -> some View {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            self.glassEffect(interactive ? .regular.interactive() : .regular, in: shape)
+        } else {
+            materialShape(shape)
+        }
+        #else
+        materialShape(shape)
+        #endif
+    }
+
+    private func materialShape<S: Shape>(_ shape: S) -> some View {
+        self
+            .background(.ultraThinMaterial, in: shape)
+            .overlay(shape.stroke(Color.white.opacity(0.12), lineWidth: 0.75))
+            .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
+    }
+}
+
+/// Ciemne tło z ciepłą pomarańczową poświatą od dołu.
+struct AppBackground: View {
+    var body: some View {
+        ZStack {
+            LinearGradient(colors: [Color(white: 0.09), Color(white: 0.04)],
+                           startPoint: .top, endPoint: .bottom)
+            RadialGradient(colors: [Color.orange.opacity(0.30), Color.orange.opacity(0.08), .clear],
+                           center: .bottom, startRadius: 10, endRadius: 520)
+            RadialGradient(colors: [Color.orange.opacity(0.07), .clear],
+                           center: .top, startRadius: 0, endRadius: 360)
+        }
+        .ignoresSafeArea()
+    }
+}
+
+extension View {
+    /// Wspólny wygląd ekranów z listą (Karty, Ustawienia, Dziennik):
+    /// to samo ciemne tło z poświatą co ekran główny, ciemne karty sekcji, pomarańczowy akcent.
+    func appScreen() -> some View {
+        self
+            .scrollContentBackground(.hidden)
+            .background { AppBackground() }
+            .tint(.orange)
+    }
+}

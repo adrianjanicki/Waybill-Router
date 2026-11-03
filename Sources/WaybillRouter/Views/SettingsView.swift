@@ -96,6 +96,7 @@ struct SettingsView: View {
                 Text("Co aplikacja odczytała ze skanu, jakie trasy policzyła, co zapisała i usunęła. Przyda się przy zgłaszaniu błędów.")
             }
         }
+        .appScreen()
         .navigationTitle("Ustawienia")
         .sheet(item: $editFirm) { target in
             FirmAddressSheet(
