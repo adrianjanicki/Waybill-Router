@@ -24,85 +24,128 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        Form {
-            Section {
-                SecureField(builtInKey ? "Wbudowany w aplikację" : "Wklej klucz", text: $apiKey)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-            } header: {
-                Text("Klucz TomTom API")
-            } footer: {
-                Text("Darmowy klucz: developer.tomtom.com. Wpisany tutaj ma pierwszeństwo przed wbudowanym.")
-            }
-
-            Section("Rozliczenie") {
-                HStack {
-                    Text("Stawka zł/km")
-                    TextField("np. 1,20", value: $rate, format: .number.locale(Fmt.pl))
+        List {
+            VStack(alignment: .leading, spacing: 16) {
+                WaybillPanelTitle(title: "Rozliczenie", icon: "creditcard")
+                HStack(alignment: .firstTextBaseline) {
+                    TextField("1,20", value: $rate, format: .number.locale(Fmt.pl))
                         .keyboardType(.decimalPad)
-                        .multilineTextAlignment(.trailing)
+                        .font(.largeTitle.bold().monospacedDigit())
+                        .accessibilityLabel("Stawka za kilometr")
+                    Text("zł / km").foregroundStyle(.secondary)
+                }
+                Text("Stawka do podsumowania należności za kursy.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            .waybillPanel().waybillPanelRow()
+
+            VStack(alignment: .leading, spacing: 14) {
+                WaybillPanelTitle(title: "Przewoźnik i pojazd", icon: "truck.box")
+                settingsField("Przewoźnik", text: $carrier)
+                Divider()
+                settingsField("Marka pojazdu", text: $car)
+                Divider()
+                settingsField("Numer rejestracyjny", text: $registration)
+            }
+            .waybillPanel().waybillPanelRow()
+
+            VStack(alignment: .leading, spacing: 14) {
+                WaybillPanelTitle(title: "Magazyn", icon: "building.2")
+                Text(depotAddress).font(.subheadline)
+                Text("Początek i koniec trasy").font(.caption).foregroundStyle(.secondary)
+                Divider()
+                TextField("Nowy adres magazynu", text: $depotQuery, axis: .vertical)
+                    .padding(12)
+                    .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
+                Button { Task { await changeDepot() } } label: {
+                    Label("Zmień magazyn", systemImage: "mappin.and.ellipse")
+                        .frame(maxWidth: .infinity, minHeight: 32)
+                }
+                .secondaryActionStyle()
+                .tint(.white)
+                .disabled(depotQuery.trimmingCharacters(in: .whitespaces).isEmpty)
+                if let depotMessage {
+                    Text(depotMessage).font(.footnote).foregroundStyle(.secondary)
                 }
             }
+            .waybillPanel().waybillPanelRow()
 
-            Section("Karta drogowa") {
-                TextField("Przewoźnik", text: $carrier)
-                TextField("Marka pojazdu", text: $car)
-                TextField("Numer rejestracyjny", text: $registration)
+            VStack(alignment: .leading, spacing: 12) {
+                WaybillPanelTitle(title: "Planowanie trasy", icon: "point.topleft.down.to.point.bottomright.curvepath")
+                Toggle("Profil ciężarowy", isOn: $truckProfile)
+                Text("Trasa dla pojazdu dostawczego 3,5 t. Uwzględnia zakazy dla ciężarówek. Promy i drogi nieutwardzone są zawsze omijane.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
+            .waybillPanel().waybillPanelRow()
 
-            Section {
-                Text(depotAddress)
-                TextField("Nowy adres magazynu", text: $depotQuery)
-                Button("Zmień magazyn") { Task { await changeDepot() } }
-                    .disabled(depotQuery.trimmingCharacters(in: .whitespaces).isEmpty)
-                if let depotMessage { Text(depotMessage).font(.footnote).foregroundStyle(.secondary) }
-            } header: {
-                Text("Magazyn (start i koniec trasy)")
+            VStack(alignment: .leading, spacing: 12) {
+                WaybillPanelTitle(title: "Połączenie z TomTom", icon: "key")
+                SecureField(builtInKey ? "Wbudowany w aplikację" : "Wklej klucz API", text: $apiKey)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .accessibilityLabel("Klucz TomTom API")
+                Text("Własny klucz zastępuje klucz wbudowany. Uzyskasz go na developer.tomtom.com.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
-
-            Section {
-                Toggle("Profil ciężarowy (truck)", isOn: $truckProfile)
-            } header: {
-                Text("Trasa")
-            } footer: {
-                Text("Włączony: TomTom liczy trasę dla pojazdu dostawczego 3,5 t (omija m.in. drogi z zakazem dla ciężarówek). Zawsze omijane: promy i drogi nieutwardzone.")
-            }
+            .waybillPanel().waybillPanelRow()
 
             Section {
                 if firms.isEmpty {
-                    Text("Jeszcze brak. Adresy dodają się przy pierwszym kursie do danej firmy.")
+                    Text("Adresy pojawią się po dodaniu pierwszych firm.")
                         .foregroundStyle(.secondary)
+                        .waybillPanel().waybillPanelRow()
                 }
                 ForEach(firms) { firm in
                     Button { editFirm = AddressTarget(name: firm.name) } label: {
-                        VStack(alignment: .leading) {
-                            Text(firm.name.uppercased()).foregroundStyle(.primary)
-                            Text(firm.address).font(.caption).foregroundStyle(.secondary)
+                        HStack(spacing: 12) {
+                            Image(systemName: "building.2").foregroundStyle(.secondary)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(firm.name.uppercased()).font(.subheadline.weight(.semibold))
+                                Text(firm.address).font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 0)
+                            Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
                         }
+                        .foregroundStyle(.primary)
+                        .waybillPanel()
                     }
+                    .buttonStyle(.plain)
+                    .waybillPanelRow()
                 }
                 .onDelete { offsets in
                     for i in offsets { context.delete(firms[i]) }
                 }
             } header: {
-                Text("Adresy firm")
+                Text("Adresy firm").font(.headline).textCase(nil)
             }
 
-            Section {
-                NavigationLink { LogView() } label: {
-                    Label("Dziennik zdarzeń", systemImage: "list.bullet.rectangle")
-                }
-            } footer: {
-                Text("Co aplikacja odczytała ze skanu, jakie trasy policzyła, co zapisała i usunęła. Przyda się przy zgłaszaniu błędów.")
+            NavigationLink { LogView() } label: {
+                Label("Dziennik zdarzeń", systemImage: "list.bullet.rectangle")
+                    .foregroundStyle(.primary)
             }
+            .waybillPanel().waybillPanelRow()
         }
+        .listStyle(.plain)
         .appScreen()
+        .toolbar(.visible, for: .navigationBar)
         .navigationTitle("Ustawienia")
+        .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $editFirm) { target in
             FirmAddressSheet(
                 name: target.name,
                 initialAddress: firms.first(where: { $0.name == target.name })?.address ?? target.name
             )
+        }
+    }
+
+    private func settingsField(_ title: String, text: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(.caption).foregroundStyle(.secondary)
+            TextField(title, text: text, axis: .vertical)
+                .font(.body.weight(.medium))
+                .padding(12)
+                .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5))
         }
     }
 

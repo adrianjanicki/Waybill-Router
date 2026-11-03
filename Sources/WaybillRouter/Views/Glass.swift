@@ -118,3 +118,40 @@ extension View {
             .tint(.orange)
     }
 }
+
+// Wspólne panele ustawień i kart drogowych.
+extension View {
+    func waybillPanel() -> some View {
+        self
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 24))
+            .overlay {
+                RoundedRectangle(cornerRadius: 24)
+                    .strokeBorder(Color.white.opacity(0.10), lineWidth: 0.75)
+            }
+    }
+
+    func waybillPanelRow() -> some View {
+        self
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+    }
+}
+
+struct WaybillPanelTitle: View {
+    let title: String
+    let icon: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon).foregroundStyle(.orange)
+            Text(title)
+        }
+            .font(.headline)
+            .foregroundStyle(.primary)
+            .padding(.bottom, 4)
+            .accessibilityAddTraits(.isHeader)
+    }
+}
