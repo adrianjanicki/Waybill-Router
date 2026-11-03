@@ -121,6 +121,7 @@ struct TripEditorView: View {
                     Text((["Magazyn"] + draft.firmNames.map { $0.uppercased() } + ["Magazyn"]).joined(separator: " – "))
                 }
             }
+            .keyboardDismissable()
             .navigationTitle(trip == nil ? "Nowy kurs" : "Edytuj kurs")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -322,6 +323,7 @@ struct FirmAddressSheet: View {
                     Text(message).foregroundStyle(.secondary)
                 }
             }
+            .keyboardDismissable()
             .navigationTitle("Adres firmy")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

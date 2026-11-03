@@ -235,6 +235,7 @@ private struct KartaRowEditor: View {
                 }
             }
             .appScreen()
+            .keyboardDismissable()
             .navigationTitle("Wiersz karty")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -292,6 +293,7 @@ private struct KartaHeaderEditor: View {
                 }
             }
             .appScreen()
+            .keyboardDismissable()
             .navigationTitle("Nagłówek karty")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
