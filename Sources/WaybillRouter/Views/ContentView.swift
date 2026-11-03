@@ -26,9 +26,12 @@ struct ContentView: View {
     @Query(sort: [SortDescriptor(\Trip.date), SortDescriptor(\Trip.created)]) private var allTrips: [Trip]
     @Query private var firms: [Firm]
     @AppStorage(SettingsKey.rate) private var rate = 0.0
+    @ScaledMetric(relativeTo: .largeTitle) private var distanceSize = 104
 
     @State private var month = Date().startOfMonth
     @State private var showScanner = false
+    @State private var showKarty = false
+    @State private var showSettings = false
     @State private var photoItem: PhotosPickerItem?
     @State private var editor: EditorTarget?
     @State private var tripToDelete: Trip?
@@ -65,73 +68,83 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section { summary }
+                header
+                    .plainRow(top: 4, bottom: 0)
 
-                Section { actions }
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+                summary
+                    .plainRow(top: 12, bottom: 8)
 
-                Section {
-                    if monthTrips.isEmpty {
-                        Text("Brak kursów w tym miesiącu. Zeskanuj list przewozowy, żeby dodać pierwszy.")
-                            .foregroundStyle(.secondary)
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Ostatnie kursy").font(.title2.weight(.bold))
+                    Spacer()
+                    if !monthTrips.isEmpty {
+                        Text(Plural.pl(monthTrips.count, "kurs", "kursy", "kursów"))
+                            .font(.subheadline).foregroundStyle(.secondary)
                     }
-                    ForEach(monthTripsNewestFirst) { trip in
-                        Button { editor = EditorTarget(trip: trip) } label: {
-                            TripRow(trip: trip, needsAttention: needsAttention(trip))
-                        }
-                        .foregroundStyle(.primary)
-                        .swipeActions {
-                            Button("Usuń", role: .destructive) { tripToDelete = trip }
-                        }
+                }
+                .padding(.horizontal, 6)
+                .plainRow(top: 18, bottom: 4)
+
+                if monthTrips.isEmpty {
+                    Text("Brak kursów w tym miesiącu. Zeskanuj list przewozowy, żeby dodać pierwszy.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(18)
+                        .tripCardBackground()
+                        .plainRow(top: 5, bottom: 5)
+                }
+                ForEach(monthTripsNewestFirst) { trip in
+                    Button { editor = EditorTarget(trip: trip) } label: {
+                        TripRow(trip: trip, needsAttention: needsAttention(trip))
                     }
-                } header: {
-                    HStack {
-                        Text("Kursy")
-                        Spacer()
-                        if !monthTrips.isEmpty {
-                            Text(Plural.pl(monthTrips.count, "kurs", "kursy", "kursów")).textCase(nil)
-                        }
+                    .buttonStyle(CardPressStyle())
+                    .plainRow(top: 5, bottom: 5)
+                    .swipeActions {
+                        Button("Usuń", role: .destructive) { tripToDelete = trip }
                     }
                 }
 
                 if !otherMonths.isEmpty {
-                    Section("Inne miesiące z kursami") {
-                        ForEach(otherMonths) { item in
-                            Button { withAnimation { month = item.month } } label: {
-                                HStack {
-                                    Text(Fmt.month(item.month))
-                                    Spacer()
-                                    Text("\(Plural.pl(item.count, "kurs", "kursy", "kursów")) · \(Fmt.km(item.km)) km")
-                                        .monospacedDigit().foregroundStyle(.secondary)
-                                }
+                    Text("Inne miesiące z kursami")
+                        .font(.headline)
+                        .padding(.horizontal, 6)
+                        .plainRow(top: 22, bottom: 4)
+                    ForEach(otherMonths) { item in
+                        Button { withAnimation { month = item.month } } label: {
+                            HStack {
+                                Text(Fmt.month(item.month)).font(.subheadline.weight(.semibold))
+                                Spacer()
+                                Text("\(Plural.pl(item.count, "kurs", "kursy", "kursów")) · \(Fmt.km(item.km)) km")
+                                    .font(.subheadline).monospacedDigit().foregroundStyle(.secondary)
+                                Image(systemName: "chevron.right")
+                                    .font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
                             }
-                            .foregroundStyle(.primary)
+                            .padding(.horizontal, 18).padding(.vertical, 14)
+                            .tripCardBackground()
                         }
+                        .buttonStyle(CardPressStyle())
+                        .plainRow(top: 4, bottom: 4)
                     }
                 }
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background { HomeBackground() }
             .safeAreaInset(edge: .bottom) {
-                if !parked.isEmpty {
-                    returnCapsule
-                        .padding(.horizontal)
-                        .padding(.bottom, 8)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-            }
-            .navigationTitle("Karta drogowa")
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    NavigationLink { KartyView(month: month, trips: monthTrips) } label: {
-                        Label("Karty", systemImage: "doc.text")
+                VStack(spacing: 10) {
+                    if !parked.isEmpty {
+                        returnCapsule
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
+                    dock
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    NavigationLink { SettingsView() } label: {
-                        Label("Ustawienia", systemImage: "gearshape")
-                    }
-                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 4)
             }
+            .toolbar(.hidden, for: .navigationBar)
+            .navigationDestination(isPresented: $showKarty) { KartyView(month: month, trips: monthTrips) }
+            .navigationDestination(isPresented: $showSettings) { SettingsView() }
             .fullScreenCover(isPresented: $showScanner, onDismiss: {
                 // Edytor otwieramy dopiero po zamknięciu skanera (dwa modale naraz nie działają).
                 if !scannedImages.isEmpty {
@@ -211,6 +224,8 @@ struct ContentView: View {
                 }
             }
         }
+        // Projekt ekranu jest ciemny (poświata, szkło), więc aplikacja zawsze w trybie ciemnym.
+        .preferredColorScheme(.dark)
     }
 
     /// Kurs wymaga uwagi: firma bez zapisanego adresu albo brak kilometrów.
@@ -225,67 +240,134 @@ struct ContentView: View {
 
     // MARK: - Ekran główny
 
+    /// Tytuł z okrągłymi szklanymi przyciskami: karty (lewo) i ustawienia (prawo).
+    private var header: some View {
+        HStack {
+            Button { showKarty = true } label: {
+                Image(systemName: "doc.text")
+                    .font(.title3.weight(.medium))
+                    .frame(width: 52, height: 52)
+                    .glass(in: Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Karty drogowe")
+
+            Spacer()
+            Text("Karta drogowa").font(.title2.weight(.bold))
+            Spacer()
+
+            Button { showSettings = true } label: {
+                Image(systemName: "gearshape")
+                    .font(.title3.weight(.medium))
+                    .frame(width: 52, height: 52)
+                    .glass(in: Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Ustawienia")
+        }
+        .padding(.horizontal, 4)
+    }
+
     private var summary: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 26) {
+            // Szklana kapsuła z miesiącem.
             HStack {
                 Button { withAnimation { month = month.addingMonths(-1) } } label: {
-                    Image(systemName: "chevron.left").frame(width: 20, height: 20)
+                    Image(systemName: "chevron.left").font(.headline)
+                        .frame(width: 48, height: 44).contentShape(Rectangle())
                 }
                 .accessibilityLabel("Poprzedni miesiąc")
-                Spacer()
+                Spacer(minLength: 4)
                 Text(Fmt.month(month)).font(.title3.weight(.semibold))
-                Spacer()
+                    .lineLimit(1).minimumScaleFactor(0.7)
+                Spacer(minLength: 4)
                 Button { withAnimation { month = month.addingMonths(1) } } label: {
-                    Image(systemName: "chevron.right").frame(width: 20, height: 20)
+                    Image(systemName: "chevron.right").font(.headline)
+                        .frame(width: 48, height: 44).contentShape(Rectangle())
                 }
                 .accessibilityLabel("Następny miesiąc")
             }
-            .secondaryActionStyle()
-            .buttonBorderShape(.circle)
-            .tint(.primary)
+            .buttonStyle(.plain)
+            .padding(.horizontal, 6)
+            .glass(in: Capsule(), interactive: false)
+            .frame(maxWidth: 320)
 
+            // Duża liczba kilometrów.
+            VStack(spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(Fmt.km(monthKm))
+                        .font(.system(size: distanceSize, weight: .heavy))
+                        .monospacedDigit()
+                        .contentTransition(.numericText())
+                    Text("km")
+                        .font(.system(size: distanceSize * 0.36, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .lineLimit(1)
+                .minimumScaleFactor(0.4)
+                .shadow(color: .white.opacity(0.08), radius: 12)
+                Text("Przejechane w tym miesiącu")
+                    .font(.headline.weight(.regular)).foregroundStyle(.secondary)
+            }
+            .accessibilityElement(children: .combine)
+
+            // Kursy | Do zapłaty.
             HStack(spacing: 0) {
-                Stat(title: "Kilometry", value: Fmt.km(monthKm))
-                Divider().frame(height: 32)
-                Stat(title: "Kursy", value: "\(monthTrips.count)")
-                Divider().frame(height: 32)
-                Stat(title: "Do zapłaty", value: rate > 0 ? Fmt.money(monthKm * rate) : "—")
+                Text(Plural.pl(monthTrips.count, "kurs", "kursy", "kursów"))
+                    .font(.title.weight(.bold))
+                    .lineLimit(1).minimumScaleFactor(0.6)
+                    .contentTransition(.numericText())
+                    .frame(maxWidth: .infinity)
+                Rectangle().fill(Color.white.opacity(0.18)).frame(width: 1, height: 48)
+                VStack(spacing: 2) {
+                    Text(rate > 0 ? Fmt.money(monthKm * rate) : "—")
+                        .font(.title.weight(.bold).monospacedDigit())
+                        .lineLimit(1).minimumScaleFactor(0.6)
+                        .contentTransition(.numericText())
+                    Text("Do zapłaty").font(.subheadline).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .accessibilityElement(children: .combine)
             }
         }
-        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity)
     }
 
-    private var actions: some View {
-        VStack(spacing: 10) {
+    /// Szklany dok na dole: Skanuj (pomarańczowy), Galeria, Ręcznie.
+    private var dock: some View {
+        HStack(spacing: 10) {
             Button {
                 if DocumentScanner.isSupported { showScanner = true }
             } label: {
-                Label("Skanuj list przewozowy", systemImage: "doc.viewfinder")
-                    .font(.title3.weight(.semibold))
-                    .frame(maxWidth: .infinity, minHeight: 44)
+                dockLabel("Skanuj", icon: "camera")
             }
-            .prominentActionStyle()
-            .controlSize(.large)
-            .tint(.orange)
+            .buttonStyle(DockButtonStyle(prominent: true))
             .disabled(!DocumentScanner.isSupported)
+            .accessibilityLabel("Skanuj list przewozowy")
 
-            HStack(spacing: 10) {
-                PhotosPicker(selection: $photoItem, matching: .images) {
-                    Label("Galeria", systemImage: "photo.on.rectangle")
-                        .frame(maxWidth: .infinity, minHeight: 28)
-                }
-                Button {
-                    editor = EditorTarget(date: newTripDate)
-                } label: {
-                    Label("Dodaj ręcznie", systemImage: "square.and.pencil")
-                        .frame(maxWidth: .infinity, minHeight: 28)
-                }
+            PhotosPicker(selection: $photoItem, matching: .images) {
+                dockLabel("Galeria", icon: "photo")
             }
-            .secondaryActionStyle()
-            .controlSize(.large)
-            .tint(.primary)
-            .font(.subheadline.weight(.medium))
+            .buttonStyle(DockButtonStyle(prominent: false))
+
+            Button {
+                editor = EditorTarget(date: newTripDate)
+            } label: {
+                dockLabel("Ręcznie", icon: "plus")
+            }
+            .buttonStyle(DockButtonStyle(prominent: false))
+            .accessibilityLabel("Dodaj kurs ręcznie")
         }
+        .padding(10)
+        .glass(in: RoundedRectangle(cornerRadius: 36, style: .continuous), interactive: false)
+    }
+
+    private func dockLabel(_ title: String, icon: String) -> some View {
+        VStack(spacing: 6) {
+            Image(systemName: icon).font(.title2.weight(.medium))
+            Text(title).font(.subheadline.weight(.semibold))
+        }
+        .frame(maxWidth: .infinity, minHeight: 64)
     }
 
     // MARK: - Kapsuła „Wróć do kursu”
@@ -424,38 +506,29 @@ private struct MonthSummary: Identifiable {
     var id: Date { month }
 }
 
-private struct Stat: View {
-    var title: String
-    var value: String
-
-    var body: some View {
-        VStack(spacing: 2) {
-            Text(value).font(.title3.monospacedDigit().weight(.semibold))
-                .lineLimit(1).minimumScaleFactor(0.6)
-                .contentTransition(.numericText())
-            Text(title).font(.caption).foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-    }
-}
-
-/// Wiersz kursu: data po lewej, firmy w kolejności jazdy, kilometry po prawej.
+/// Karta kursu: data | firmy w kolejności jazdy | kilometry.
 private struct TripRow: View {
     var trip: Trip
     var needsAttention: Bool
 
     var body: some View {
-        HStack(alignment: .center, spacing: 14) {
-            VStack(spacing: 0) {
-                Text(Fmt.day(trip.date)).font(.title3.weight(.semibold).monospacedDigit())
-                Text(Fmt.weekdayShort(trip.date)).font(.caption2).foregroundStyle(.secondary)
+        HStack(alignment: .center, spacing: 0) {
+            VStack(spacing: 2) {
+                Text(Fmt.day(trip.date)).font(.title.weight(.bold).monospacedDigit())
+                Text(Fmt.weekdayShort(trip.date)).font(.subheadline).foregroundStyle(.secondary)
             }
-            .frame(width: 38)
+            .frame(width: 64)
 
-            VStack(alignment: .leading, spacing: 2) {
+            Rectangle()
+                .fill(Color.white.opacity(0.14))
+                .frame(width: 1)
+                .padding(.vertical, 2)
+                .padding(.trailing, 16)
+
+            VStack(alignment: .leading, spacing: 4) {
                 Text(trip.firmNames.isEmpty ? "—" : trip.firmNames.map { $0.uppercased() }.joined(separator: " → "))
-                    .font(.subheadline.weight(.medium))
-                    .lineLimit(2)
+                    .font(.body.weight(.medium))
+                    .fixedSize(horizontal: false, vertical: true)
                 if needsAttention {
                     Label(trip.km <= 0 ? "Brak kilometrów" : "Firma bez adresu", systemImage: "exclamationmark.circle.fill")
                         .font(.caption)
@@ -464,13 +537,88 @@ private struct TripRow: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            HStack(alignment: .firstTextBaseline, spacing: 2) {
-                Text(Fmt.km(trip.km)).font(.body.weight(.semibold).monospacedDigit())
-                Text("km").font(.caption).foregroundStyle(.secondary)
-            }
-            .foregroundStyle(trip.km <= 0 ? AnyShapeStyle(Color.orange) : AnyShapeStyle(Color.primary))
+            Text("\(Fmt.km(trip.km)) km")
+                .font(.title3.weight(.bold).monospacedDigit())
+                .lineLimit(1)
+                .foregroundStyle(trip.km <= 0 ? AnyShapeStyle(Color.orange) : AnyShapeStyle(Color.primary))
+                .padding(.leading, 10)
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 16)
+        .padding(.leading, 8)
+        .padding(.trailing, 18)
+        .frame(maxWidth: .infinity, minHeight: 92)
+        .tripCardBackground()
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// Ciemne tło z ciepłą pomarańczową poświatą od dołu.
+private struct HomeBackground: View {
+    var body: some View {
+        ZStack {
+            LinearGradient(colors: [Color(white: 0.09), Color(white: 0.04)],
+                           startPoint: .top, endPoint: .bottom)
+            RadialGradient(colors: [Color.orange.opacity(0.30), Color.orange.opacity(0.08), .clear],
+                           center: .bottom, startRadius: 10, endRadius: 520)
+            RadialGradient(colors: [Color.orange.opacity(0.07), .clear],
+                           center: .top, startRadius: 0, endRadius: 360)
+        }
+        .ignoresSafeArea()
+    }
+}
+
+/// Przycisk w doku: pomarańczowy (główna akcja) albo szklany.
+private struct DockButtonStyle: ButtonStyle {
+    var prominent: Bool
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 26, style: .continuous)
+        configuration.label
+            .foregroundStyle(.white)
+            .background {
+                if prominent {
+                    shape.fill(LinearGradient(colors: [Color(red: 1, green: 0.62, blue: 0.2), Color(red: 0.93, green: 0.45, blue: 0.05)],
+                                              startPoint: .top, endPoint: .bottom))
+                        .shadow(color: .orange.opacity(isEnabled ? 0.55 : 0), radius: 14, y: 2)
+                } else {
+                    shape.fill(Color.white.opacity(0.08))
+                }
+            }
+            .overlay(shape.strokeBorder(Color.white.opacity(prominent ? 0.35 : 0.14), lineWidth: 0.75))
+            .contentShape(shape)
+            .opacity(isEnabled ? 1 : 0.45)
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .animation(.spring(duration: 0.25), value: configuration.isPressed)
+    }
+}
+
+/// Karta reaguje na dotknięcie lekkim zmniejszeniem.
+private struct CardPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(.primary)
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .opacity(configuration.isPressed ? 0.85 : 1)
+            .animation(.spring(duration: 0.2), value: configuration.isPressed)
+    }
+}
+
+private extension View {
+    /// Tło karty kursu: przyciemnione szkło z cienką jasną ramką.
+    func tripCardBackground() -> some View {
+        let shape = RoundedRectangle(cornerRadius: 24, style: .continuous)
+        return self
+            .background(Color.white.opacity(0.06), in: shape)
+            .overlay(shape.strokeBorder(Color.white.opacity(0.10), lineWidth: 0.75))
+            .contentShape(shape)
+    }
+
+    /// Wiersz listy bez tła i separatora, z marginesami jak na projekcie.
+    func plainRow(top: CGFloat, bottom: CGFloat) -> some View {
+        self
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+            .listRowInsets(EdgeInsets(top: top, leading: 16, bottom: bottom, trailing: 16))
     }
 }

@@ -68,3 +68,27 @@ enum Plural {
         return "\(n) \(many)"
     }
 }
+
+extension View {
+    /// Szkło w dowolnym kształcie (okrągłe przyciski, karty, dok).
+    /// Na starszych systemach – materiał z delikatną ramką.
+    @ViewBuilder
+    func glass<S: Shape>(in shape: S, interactive: Bool = true) -> some View {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            self.glassEffect(interactive ? .regular.interactive() : .regular, in: shape)
+        } else {
+            materialShape(shape)
+        }
+        #else
+        materialShape(shape)
+        #endif
+    }
+
+    private func materialShape<S: Shape>(_ shape: S) -> some View {
+        self
+            .background(.ultraThinMaterial, in: shape)
+            .overlay(shape.stroke(Color.white.opacity(0.12), lineWidth: 0.75))
+            .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
+    }
+}
