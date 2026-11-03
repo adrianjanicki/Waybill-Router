@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import PhotosUI
+import UIKit
 
 /// Co otwieramy w edytorze kursu.
 struct EditorTarget: Identifiable {
@@ -133,6 +134,7 @@ struct ContentView: View {
                     }
                 }
             }
+            .dayPaging { step in showDay(day.addingDays(step)) }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .background { AppBackground() }
@@ -389,17 +391,6 @@ struct ContentView: View {
         }
         .padding(.bottom, Calendar.current.isDateInToday(day) ? 0 : 16)
         .contentShape(Rectangle())
-        .simultaneousGesture(daySwipe)
-    }
-
-    /// Przesunięcie w lewo – następny dzień, w prawo – poprzedni.
-    private var daySwipe: some Gesture {
-        DragGesture(minimumDistance: 24)
-            .onEnded { value in
-                let dx = value.translation.width, dy = value.translation.height
-                guard abs(dx) > 60, abs(dx) > abs(dy) * 1.5 else { return }
-                showDay(day.addingDays(dx < 0 ? 1 : -1))
-            }
     }
 
     private func dayCountText(_ km: Double) -> String {
@@ -433,7 +424,6 @@ struct ContentView: View {
             removal: .opacity))
         .frame(maxWidth: .infinity, minHeight: 140, alignment: .top)
         .contentShape(Rectangle())
-        .simultaneousGesture(daySwipe)
     }
 
     /// Szklany dok na dole: Skanuj (pomarańczowy), Galeria, Ręcznie.
@@ -708,5 +698,55 @@ private extension View {
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
             .listRowInsets(EdgeInsets(top: top, leading: 16, bottom: bottom, trailing: 16))
+    }
+}
+
+
+private extension View {
+    @ViewBuilder
+    func dayPaging(onPage: @escaping (Int) -> Void) -> some View {
+        if #available(iOS 18.0, *) {
+            self.gesture(HorizontalDayPan(onPage: onPage))
+        } else {
+            self.simultaneousGesture(
+                DragGesture(minimumDistance: 24).onEnded { value in
+                    let dx = value.translation.width
+                    guard abs(dx) >= 44, abs(dx) > abs(value.translation.height) * 1.5 else { return }
+                    onPage(dx < 0 ? 1 : -1)
+                }
+            )
+        }
+    }
+}
+
+@available(iOS 18.0, *)
+private struct HorizontalDayPan: UIGestureRecognizerRepresentable {
+    let onPage: (Int) -> Void
+
+    func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator {
+        Coordinator()
+    }
+
+    func makeUIGestureRecognizer(context: Context) -> UIPanGestureRecognizer {
+        let pan = UIPanGestureRecognizer()
+        pan.delegate = context.coordinator
+        pan.maximumNumberOfTouches = 1
+        pan.cancelsTouchesInView = true
+        return pan
+    }
+
+    func handleUIGestureRecognizerAction(_ recognizer: UIPanGestureRecognizer, context: Context) {
+        guard recognizer.state == .ended else { return }
+        let movement = recognizer.translation(in: recognizer.view)
+        guard abs(movement.x) >= 44, abs(movement.x) > abs(movement.y) * 1.5 else { return }
+        onPage(movement.x < 0 ? 1 : -1)
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return false }
+            let movement = pan.translation(in: pan.view)
+            return abs(movement.x) > abs(movement.y) * 1.5
+        }
     }
 }
