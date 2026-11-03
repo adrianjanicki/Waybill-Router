@@ -29,6 +29,10 @@ struct ContentView: View {
     @ScaledMetric(relativeTo: .largeTitle) private var distanceSize = 104
 
     @State private var month = Date().startOfMonth
+    /// Dzień pokazany na ekranie głównym (przesuwany w lewo/prawo).
+    @State private var day = Date().startOfDay
+    /// Kierunek ostatniej zmiany dnia – do animacji wjazdu kart.
+    @State private var dayStep = 1
     @State private var showScanner = false
     @State private var showKarty = false
     @State private var showSettings = false
@@ -45,8 +49,8 @@ struct ContentView: View {
     @State private var draftToOpen: EditorTarget?
 
     private var monthTrips: [Trip] { allTrips.filter { $0.date.isSameMonth(as: month) } }
-    /// Na liście kursów najnowszy na górze (data malejąco, w tym samym dniu ostatnio dodany pierwszy).
-    private var monthTripsNewestFirst: [Trip] { monthTrips.reversed() }
+    /// Kursy wybranego dnia, w kolejności dodania.
+    private var dayTrips: [Trip] { allTrips.filter { $0.date.isSameDay(as: day) } }
     private var monthKm: Double { monthTrips.reduce(0) { $0 + $1.km } }
     private var knownFirmKeys: Set<String> { Set(firms.map(\.key)) }
 
@@ -59,10 +63,36 @@ struct ContentView: View {
             .sorted { $0.month > $1.month }
     }
 
-    /// Nowy kurs ręcznie: w bieżącym miesiącu dzisiejsza data, w innym – data ostatniego kursu z tego miesiąca.
+    /// Nowy kurs ręcznie: na dzień, który jest właśnie pokazany.
     private var newTripDate: Date {
-        if month.isSameMonth(as: .now) { return .now }
-        return monthTrips.last?.date ?? month
+        day.isSameDay(as: .now) ? .now : day
+    }
+
+    /// Zmiana dnia (gest albo strzałki); miesiąc u góry idzie za dniem.
+    private func showDay(_ newDay: Date) {
+        let target = newDay.startOfDay
+        guard !target.isSameDay(as: day) else { return }
+        dayStep = target > day ? 1 : -1
+        withAnimation(.spring(duration: 0.3)) {
+            day = target
+            if !target.isSameMonth(as: month) { month = target.startOfMonth }
+        }
+    }
+
+    /// Zmiana miesiąca: bieżący – dziś, inny – ostatni dzień z kursem (albo pierwszy dzień miesiąca).
+    private func showMonth(_ newMonth: Date) {
+        let start = newMonth.startOfMonth
+        let target: Date
+        if start.isSameMonth(as: .now) {
+            target = Date().startOfDay
+        } else {
+            target = (allTrips.last { $0.date.isSameMonth(as: start) }?.date ?? start).startOfDay
+        }
+        dayStep = start > month ? 1 : -1
+        withAnimation {
+            month = start
+            day = target
+        }
     }
 
     var body: some View {
@@ -74,36 +104,11 @@ struct ContentView: View {
                 summary
                     .plainRow(top: 12, bottom: 8)
 
-                HStack(alignment: .firstTextBaseline) {
-                    Text("Ostatnie kursy").font(.title2.weight(.bold))
-                    Spacer()
-                    if !monthTrips.isEmpty {
-                        Text(Plural.pl(monthTrips.count, "kurs", "kursy", "kursów"))
-                            .font(.subheadline).foregroundStyle(.secondary)
-                    }
-                }
-                .padding(.horizontal, 6)
-                .plainRow(top: 18, bottom: 4)
+                dayHeader
+                    .plainRow(top: 18, bottom: 4)
 
-                if monthTrips.isEmpty {
-                    Text("Brak kursów w tym miesiącu. Zeskanuj list przewozowy, żeby dodać pierwszy.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(18)
-                        .tripCardBackground()
-                        .plainRow(top: 5, bottom: 5)
-                }
-                ForEach(monthTripsNewestFirst) { trip in
-                    Button { editor = EditorTarget(trip: trip) } label: {
-                        TripRow(trip: trip, needsAttention: needsAttention(trip))
-                    }
-                    .buttonStyle(CardPressStyle())
+                dayCards
                     .plainRow(top: 5, bottom: 5)
-                    .swipeActions {
-                        Button("Usuń", role: .destructive) { tripToDelete = trip }
-                    }
-                }
 
                 if !otherMonths.isEmpty {
                     Text("Inne miesiące z kursami")
@@ -111,7 +116,7 @@ struct ContentView: View {
                         .padding(.horizontal, 6)
                         .plainRow(top: 22, bottom: 4)
                     ForEach(otherMonths) { item in
-                        Button { withAnimation { month = item.month } } label: {
+                        Button { showMonth(item.month) } label: {
                             HStack {
                                 Text(Fmt.month(item.month)).font(.subheadline.weight(.semibold))
                                 Spacer()
@@ -163,6 +168,7 @@ struct ContentView: View {
             .sheet(item: $editor) { target in
                 TripEditorView(trip: target.trip, images: target.images, initialDate: target.date, draft: target.draft) { savedDate in
                     month = savedDate.startOfMonth
+                    day = savedDate.startOfDay
                 }
                 .onDisappear {
                     // Przeciągnięte w dół bez zapisu – chowamy do kapsuły zamiast gubić.
@@ -272,7 +278,7 @@ struct ContentView: View {
         VStack(spacing: 26) {
             // Szklana kapsuła z miesiącem.
             HStack {
-                Button { withAnimation { month = month.addingMonths(-1) } } label: {
+                Button { showMonth(month.addingMonths(-1)) } label: {
                     Image(systemName: "chevron.left").font(.headline)
                         .frame(width: 48, height: 44).contentShape(Rectangle())
                 }
@@ -281,7 +287,7 @@ struct ContentView: View {
                 Text(Fmt.month(month)).font(.title3.weight(.semibold))
                     .lineLimit(1).minimumScaleFactor(0.7)
                 Spacer(minLength: 4)
-                Button { withAnimation { month = month.addingMonths(1) } } label: {
+                Button { showMonth(month.addingMonths(1)) } label: {
                     Image(systemName: "chevron.right").font(.headline)
                         .frame(width: 48, height: 44).contentShape(Rectangle())
                 }
@@ -331,6 +337,103 @@ struct ContentView: View {
             }
         }
         .frame(maxWidth: .infinity)
+    }
+
+    // MARK: - Dzień
+
+    /// „Dziś” ze strzałkami; pod spodem liczba kursów i km z tego dnia.
+    private var dayHeader: some View {
+        let km = dayTrips.reduce(0) { $0 + $1.km }
+        return HStack(spacing: 4) {
+            Button { showDay(day.addingDays(-1)) } label: {
+                Image(systemName: "chevron.left").font(.headline)
+                    .frame(width: 40, height: 44).contentShape(Rectangle())
+            }
+            .accessibilityLabel("Poprzedni dzień")
+
+            VStack(spacing: 2) {
+                Text(Fmt.dayTitle(day))
+                    .font(.title2.weight(.bold))
+                    .lineLimit(1).minimumScaleFactor(0.7)
+                Text(Calendar.current.isDateInToday(day) || Calendar.current.isDateInYesterday(day) || Calendar.current.isDateInTomorrow(day)
+                     ? "\(Fmt.weekdayDate(day)) · \(dayCountText(km))"
+                     : dayCountText(km))
+                    .font(.subheadline).foregroundStyle(.secondary)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+            }
+            .frame(maxWidth: .infinity)
+
+            Button { showDay(day.addingDays(1)) } label: {
+                Image(systemName: "chevron.right").font(.headline)
+                    .frame(width: 40, height: 44).contentShape(Rectangle())
+            }
+            .accessibilityLabel("Następny dzień")
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 4)
+        .padding(.vertical, 6)
+        .glass(in: RoundedRectangle(cornerRadius: 24, style: .continuous), interactive: false)
+        .overlay(alignment: .bottom) {
+            if !Calendar.current.isDateInToday(day) {
+                Button { showDay(.now) } label: {
+                    Label("Wróć do dziś", systemImage: "arrow.uturn.backward")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.orange)
+                        .padding(.horizontal, 12).padding(.vertical, 5)
+                        .glass(in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .offset(y: 16)
+                .transition(.opacity)
+            }
+        }
+        .padding(.bottom, Calendar.current.isDateInToday(day) ? 0 : 16)
+        .contentShape(Rectangle())
+        .simultaneousGesture(daySwipe)
+    }
+
+    /// Przesunięcie w lewo – następny dzień, w prawo – poprzedni.
+    private var daySwipe: some Gesture {
+        DragGesture(minimumDistance: 24)
+            .onEnded { value in
+                let dx = value.translation.width, dy = value.translation.height
+                guard abs(dx) > 60, abs(dx) > abs(dy) * 1.5 else { return }
+                showDay(day.addingDays(dx < 0 ? 1 : -1))
+            }
+    }
+
+    private func dayCountText(_ km: Double) -> String {
+        dayTrips.isEmpty ? "brak kursów" : "\(Plural.pl(dayTrips.count, "kurs", "kursy", "kursów")) · \(Fmt.km(km)) km"
+    }
+
+    /// Karty kursów z jednego dnia. Przesunięcie w lewo – następny dzień, w prawo – poprzedni.
+    private var dayCards: some View {
+        VStack(spacing: 10) {
+            if dayTrips.isEmpty {
+                Text("Brak kursów tego dnia. Przesuń w lewo lub w prawo, żeby zobaczyć inne dni.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(18)
+                    .tripCardBackground()
+            }
+            ForEach(dayTrips) { trip in
+                Button { editor = EditorTarget(trip: trip) } label: {
+                    TripRow(trip: trip, needsAttention: needsAttention(trip))
+                }
+                .buttonStyle(CardPressStyle())
+                .contextMenu {
+                    Button("Usuń kurs", systemImage: "trash", role: .destructive) { tripToDelete = trip }
+                }
+            }
+        }
+        .id(day)
+        .transition(.asymmetric(
+            insertion: .move(edge: dayStep > 0 ? .trailing : .leading).combined(with: .opacity),
+            removal: .opacity))
+        .frame(maxWidth: .infinity, minHeight: 140, alignment: .top)
+        .contentShape(Rectangle())
+        .simultaneousGesture(daySwipe)
     }
 
     /// Szklany dok na dole: Skanuj (pomarańczowy), Galeria, Ręcznie.
