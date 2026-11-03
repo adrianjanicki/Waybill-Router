@@ -127,6 +127,7 @@ struct SettingsView: View {
         }
         .listStyle(.plain)
         .appScreen()
+        .keyboardDismissable()
         .toolbar(.visible, for: .navigationBar)
         .navigationTitle("Ustawienia")
         .navigationBarTitleDisplayMode(.inline)

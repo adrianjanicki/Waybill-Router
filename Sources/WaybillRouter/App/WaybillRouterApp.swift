@@ -10,6 +10,7 @@ struct WaybillRouterApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .installsTapToDismissKeyboard()
         }
         .modelContainer(for: [Trip.self, Firm.self])
     }
