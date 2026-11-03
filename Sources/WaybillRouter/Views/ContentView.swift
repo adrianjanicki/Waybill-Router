@@ -75,7 +75,8 @@ struct ContentView: View {
         let target = newDay.startOfDay
         guard !target.isSameDay(as: day) else { return }
         dayStep = target > day ? 1 : -1
-        withAnimation(.spring(duration: 0.3)) {
+        // Ta sama animacja co przy zmianie miesiąca.
+        withAnimation {
             day = target
             if !target.isSameMonth(as: month) { month = target.startOfMonth }
         }
@@ -116,9 +117,15 @@ struct ContentView: View {
                     Text("Inne miesiące z kursami")
                         .font(.headline)
                         .padding(.horizontal, 6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                        .simultaneousGesture(daySwipe)
                         .plainRow(top: 22, bottom: 4)
                     ForEach(otherMonths) { item in
-                        Button { showMonth(item.month) } label: {
+                        Button {
+                            guard !justSwiped else { return }
+                            showMonth(item.month)
+                        } label: {
                             HStack {
                                 Text(Fmt.month(item.month)).font(.subheadline.weight(.semibold))
                                 Spacer()
@@ -131,9 +138,17 @@ struct ContentView: View {
                             .tripCardBackground()
                         }
                         .buttonStyle(CardPressStyle())
+                        .simultaneousGesture(daySwipe)
                         .plainRow(top: 4, bottom: 4)
                     }
                 }
+
+                // Pusta przestrzeń pod kursami – tu też można przesunąć dzień palcem.
+                Color.clear
+                    .frame(maxWidth: .infinity, minHeight: 360)
+                    .contentShape(Rectangle())
+                    .simultaneousGesture(daySwipe)
+                    .plainRow(top: 0, bottom: 0)
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
@@ -357,11 +372,13 @@ struct ContentView: View {
                 Text(Fmt.dayTitle(day))
                     .font(.title2.weight(.bold))
                     .lineLimit(1).minimumScaleFactor(0.7)
+                    .contentTransition(.numericText(countsDown: dayStep < 0))
                 Text(Calendar.current.isDateInToday(day) || Calendar.current.isDateInYesterday(day) || Calendar.current.isDateInTomorrow(day)
                      ? "\(Fmt.weekdayDate(day)) · \(dayCountText(km))"
                      : dayCountText(km))
                     .font(.subheadline).foregroundStyle(.secondary)
                     .lineLimit(1).minimumScaleFactor(0.7)
+                    .contentTransition(.numericText(countsDown: dayStep < 0))
             }
             .frame(maxWidth: .infinity)
 
@@ -409,6 +426,9 @@ struct ContentView: View {
             }
     }
 
+    /// Palec przed chwilą przesuwał dzień – puszczenie go na przycisku nie jest dotknięciem.
+    private var justSwiped: Bool { Date().timeIntervalSince(lastDaySwipe) < 0.4 }
+
     private func dayCountText(_ km: Double) -> String {
         dayTrips.isEmpty ? "brak kursów" : "\(Plural.pl(dayTrips.count, "kurs", "kursy", "kursów")) · \(Fmt.km(km)) km"
     }
@@ -427,7 +447,7 @@ struct ContentView: View {
             ForEach(dayTrips) { trip in
                 Button {
                     // Przesunięcie palcem po karcie zmienia dzień, a nie otwiera kursu.
-                    guard Date().timeIntervalSince(lastDaySwipe) > 0.4 else { return }
+                    guard !justSwiped else { return }
                     editor = EditorTarget(trip: trip)
                 } label: {
                     TripRow(trip: trip, needsAttention: needsAttention(trip))
