@@ -98,45 +98,50 @@ struct ContentView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                header
-                    .plainRow(top: 4, bottom: 0)
+            GeometryReader { viewport in
+                ScrollView {
+                    VStack(spacing: 0) {
+                        header
+                            .dayRowPadding(top: 4, bottom: 0)
 
-                summary
-                    .plainRow(top: 12, bottom: 8)
+                        summary
+                            .dayRowPadding(top: 12, bottom: 8)
 
-                dayHeader
-                    .plainRow(top: 18, bottom: 4)
+                        dayHeader
+                            .dayRowPadding(top: 18, bottom: 4)
 
-                dayCards
-                    .plainRow(top: 5, bottom: 5)
+                        dayCards
+                            .dayRowPadding(top: 5, bottom: 5)
 
-                if !otherMonths.isEmpty {
-                    Text("Inne miesiące z kursami")
-                        .font(.headline)
-                        .padding(.horizontal, 6)
-                        .plainRow(top: 22, bottom: 4)
-                    ForEach(otherMonths) { item in
-                        Button { showMonth(item.month) } label: {
-                            HStack {
-                                Text(Fmt.month(item.month)).font(.subheadline.weight(.semibold))
-                                Spacer()
-                                Text("\(Plural.pl(item.count, "kurs", "kursy", "kursów")) · \(Fmt.km(item.km)) km")
-                                    .font(.subheadline).monospacedDigit().foregroundStyle(.secondary)
-                                Image(systemName: "chevron.right")
-                                    .font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                        if !otherMonths.isEmpty {
+                            Text("Inne miesiące z kursami")
+                                .font(.headline)
+                                .padding(.horizontal, 6)
+                                .dayRowPadding(top: 22, bottom: 4)
+                            ForEach(otherMonths) { item in
+                                Button { showMonth(item.month) } label: {
+                                    HStack {
+                                        Text(Fmt.month(item.month)).font(.subheadline.weight(.semibold))
+                                        Spacer()
+                                        Text("\(Plural.pl(item.count, "kurs", "kursy", "kursów")) · \(Fmt.km(item.km)) km")
+                                            .font(.subheadline).monospacedDigit().foregroundStyle(.secondary)
+                                        Image(systemName: "chevron.right")
+                                            .font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                                    }
+                                    .padding(.horizontal, 18).padding(.vertical, 14)
+                                    .tripCardBackground()
+                                }
+                                .buttonStyle(CardPressStyle())
+                                .dayRowPadding(top: 4, bottom: 4)
                             }
-                            .padding(.horizontal, 18).padding(.vertical, 14)
-                            .tripCardBackground()
                         }
-                        .buttonStyle(CardPressStyle())
-                        .plainRow(top: 4, bottom: 4)
                     }
+                    .padding(.horizontal, 16)
+                    .frame(maxWidth: .infinity, minHeight: viewport.size.height, alignment: .top)
+                    .contentShape(Rectangle())
+                    .dayPaging { step in showDay(day.addingDays(step)) }
                 }
             }
-            .dayPaging { step in showDay(day.addingDays(step)) }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
             .background { AppBackground() }
             .safeAreaInset(edge: .bottom) {
                 VStack(spacing: 10) {
@@ -692,12 +697,8 @@ private extension View {
             .contentShape(shape)
     }
 
-    /// Wiersz listy bez tła i separatora, z marginesami jak na projekcie.
-    func plainRow(top: CGFloat, bottom: CGFloat) -> some View {
-        self
-            .listRowBackground(Color.clear)
-            .listRowSeparator(.hidden)
-            .listRowInsets(EdgeInsets(top: top, leading: 16, bottom: bottom, trailing: 16))
+    func dayRowPadding(top: CGFloat, bottom: CGFloat) -> some View {
+        padding(.top, top).padding(.bottom, bottom)
     }
 }
 
@@ -743,9 +744,14 @@ private struct HorizontalDayPan: UIGestureRecognizerRepresentable {
     }
 
     final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                               shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            otherGestureRecognizer is UIPanGestureRecognizer
+        }
+
         func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
             guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return false }
-            let movement = pan.translation(in: pan.view)
+            let movement = pan.velocity(in: pan.view)
             return abs(movement.x) > abs(movement.y) * 1.5
         }
     }
