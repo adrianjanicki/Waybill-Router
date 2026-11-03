@@ -1,7 +1,6 @@
 import SwiftUI
 import SwiftData
 import PhotosUI
-import UIKit
 
 /// Co otwieramy w edytorze kursu.
 struct EditorTarget: Identifiable {
@@ -32,8 +31,8 @@ struct ContentView: View {
     @State private var month = Date().startOfMonth
     /// Dzień pokazany na ekranie głównym (przesuwany w lewo/prawo).
     @State private var day = Date().startOfDay
-    /// Strona przewijana w poziomie (jeden dzień = jedna strona). Trzymana razem z `day`.
-    @State private var pagedDay: Date? = Date().startOfDay
+    /// Kierunek ostatniej zmiany dnia – do animacji wjazdu kart.
+    @State private var dayStep = 1
     @State private var showScanner = false
     @State private var showKarty = false
     @State private var showSettings = false
@@ -49,31 +48,19 @@ struct ContentView: View {
     /// Szkic wybrany z listy – otwieramy go dopiero po zamknięciu listy.
     @State private var draftToOpen: EditorTarget?
 
-    private var monthTrips: [Trip] { trips(inMonth: month) }
+    private var monthTrips: [Trip] { allTrips.filter { $0.date.isSameMonth(as: month) } }
+    /// Kursy wybranego dnia, w kolejności dodania.
+    private var dayTrips: [Trip] { allTrips.filter { $0.date.isSameDay(as: day) } }
+    private var monthKm: Double { monthTrips.reduce(0) { $0 + $1.km } }
     private var knownFirmKeys: Set<String> { Set(firms.map(\.key)) }
 
-    private func trips(inMonth m: Date) -> [Trip] { allTrips.filter { $0.date.isSameMonth(as: m) } }
-    /// Kursy danego dnia, w kolejności dodania.
-    private func trips(onDay d: Date) -> [Trip] { allTrips.filter { $0.date.isSameDay(as: d) } }
-
     /// Inne miesiące, w których są kursy (żeby kurs zapisany z inną datą nie „znikał”).
-    private func otherMonths(than m: Date) -> [MonthSummary] {
+    private var otherMonths: [MonthSummary] {
         let grouped = Dictionary(grouping: allTrips) { $0.date.startOfMonth }
         return grouped
-            .filter { !$0.key.isSameMonth(as: m) }
+            .filter { !$0.key.isSameMonth(as: month) }
             .map { MonthSummary(month: $0.key, count: $0.value.count, km: $0.value.reduce(0) { $0 + $1.km }) }
             .sorted { $0.month > $1.month }
-    }
-
-    /// Dni, między którymi można przesuwać palcem: od roku przed najstarszym kursem do roku po najnowszym
-    /// (zawsze z dzisiejszym i pokazanym dniem). Strony są leniwe, więc długa lista nic nie kosztuje.
-    private var pageDays: [Date] {
-        let today = Date().startOfDay
-        let first = min(allTrips.first?.date.startOfDay ?? today, today, day)
-        let last = max(allTrips.last?.date.startOfDay ?? today, today, day)
-        let start = first.addingDays(-366).startOfDay
-        let count = Calendar.current.dateComponents([.day], from: start, to: last.addingDays(366)).day ?? 0
-        return (0...max(count, 0)).map { start.addingDays($0).startOfDay }
     }
 
     /// Nowy kurs ręcznie: na dzień, który jest właśnie pokazany.
@@ -81,70 +68,73 @@ struct ContentView: View {
         day.isSameDay(as: .now) ? .now : day
     }
 
-    /// Zmiana dnia strzałką: sąsiedni dzień – animowane przewinięcie strony, dalszy – od razu.
+    /// Zmiana dnia (gest albo strzałki); miesiąc u góry idzie za dniem.
     private func showDay(_ newDay: Date) {
         let target = newDay.startOfDay
         guard !target.isSameDay(as: day) else { return }
-        let distance = abs(Calendar.current.dateComponents([.day], from: day, to: target).day ?? 0)
-        if distance <= 1 {
-            withAnimation(.spring(duration: 0.35)) { pagedDay = target }
-        } else {
-            setDay(target)
-        }
-    }
-
-    /// Ustawia dzień, miesiąc i stronę naraz (bez przewijania przez dni pomiędzy).
-    private func setDay(_ newDay: Date) {
-        let target = newDay.startOfDay
-        day = target
-        month = target.startOfMonth
-        pagedDay = target
-    }
-
-    /// Strona przesunięta palcem (albo strzałką) – dzień i miesiąc idą za nią.
-    private func pageChanged(_ newDay: Date?) {
-        guard let newDay, !newDay.isSameDay(as: day) else { return }
-        day = newDay
-        if !newDay.isSameMonth(as: month) {
-            withAnimation { month = newDay.startOfMonth }
+        dayStep = target > day ? 1 : -1
+        withAnimation(.spring(duration: 0.3)) {
+            day = target
+            if !target.isSameMonth(as: month) { month = target.startOfMonth }
         }
     }
 
     /// Zmiana miesiąca: bieżący – dziś, inny – ostatni dzień z kursem (albo pierwszy dzień miesiąca).
     private func showMonth(_ newMonth: Date) {
         let start = newMonth.startOfMonth
+        let target: Date
         if start.isSameMonth(as: .now) {
-            setDay(Date())
+            target = Date().startOfDay
         } else {
-            setDay(allTrips.last { $0.date.isSameMonth(as: start) }?.date ?? start)
+            target = (allTrips.last { $0.date.isSameMonth(as: start) }?.date ?? start).startOfDay
+        }
+        dayStep = start > month ? 1 : -1
+        withAnimation {
+            month = start
+            day = target
         }
     }
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
+            List {
                 header
-                    .padding(.horizontal, 16)
-                    .padding(.top, 4)
+                    .plainRow(top: 4, bottom: 0)
 
-                // Dni jako strony natywnego, poziomego przewijania (jak zdjęcia w galerii).
-                // UIKit sam rozróżnia ruch w bok (zmiana dnia) i w pionie (przewijanie strony),
-                // więc nie potrzeba własnych gestów, które blokowały przewijanie.
-                ScrollView(.horizontal) {
-                    LazyHStack(spacing: 0) {
-                        ForEach(pageDays, id: \.self) { d in
-                            dayPage(d)
-                                .containerRelativeFrame(.horizontal)
+                summary
+                    .plainRow(top: 12, bottom: 8)
+
+                dayHeader
+                    .plainRow(top: 18, bottom: 4)
+
+                dayCards
+                    .plainRow(top: 5, bottom: 5)
+
+                if !otherMonths.isEmpty {
+                    Text("Inne miesiące z kursami")
+                        .font(.headline)
+                        .padding(.horizontal, 6)
+                        .plainRow(top: 22, bottom: 4)
+                    ForEach(otherMonths) { item in
+                        Button { showMonth(item.month) } label: {
+                            HStack {
+                                Text(Fmt.month(item.month)).font(.subheadline.weight(.semibold))
+                                Spacer()
+                                Text("\(Plural.pl(item.count, "kurs", "kursy", "kursów")) · \(Fmt.km(item.km)) km")
+                                    .font(.subheadline).monospacedDigit().foregroundStyle(.secondary)
+                                Image(systemName: "chevron.right")
+                                    .font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                            }
+                            .padding(.horizontal, 18).padding(.vertical, 14)
+                            .tripCardBackground()
                         }
+                        .buttonStyle(CardPressStyle())
+                        .plainRow(top: 4, bottom: 4)
                     }
-                    .scrollTargetLayout()
                 }
-                .scrollTargetBehavior(.paging)
-                .scrollPosition(id: $pagedDay)
-                .scrollIndicators(.hidden)
-                .onChange(of: pagedDay) { _, newDay in pageChanged(newDay) }
-                .onAppear { if pagedDay != day { pagedDay = day } }
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
             .background { AppBackground() }
             .safeAreaInset(edge: .bottom) {
                 VStack(spacing: 10) {
@@ -177,7 +167,8 @@ struct ContentView: View {
             }
             .sheet(item: $editor) { target in
                 TripEditorView(trip: target.trip, images: target.images, initialDate: target.date, draft: target.draft) { savedDate in
-                    setDay(savedDate)
+                    month = savedDate.startOfMonth
+                    day = savedDate.startOfDay
                 }
                 .onDisappear {
                     // Przeciągnięte w dół bez zapisu – chowamy do kapsuły zamiast gubić.
@@ -283,57 +274,8 @@ struct ContentView: View {
         .padding(.horizontal, 4)
     }
 
-    /// Jedna strona: podsumowanie miesiąca tego dnia, dzień, jego kursy i inne miesiące.
-    /// Każda strona przewija się w pionie osobno.
-    private func dayPage(_ d: Date) -> some View {
-        let m = d.startOfMonth
-        let dayTrips = trips(onDay: d)
-        let others = otherMonths(than: m)
-        return ScrollView(.vertical) {
-            VStack(spacing: 0) {
-                summary(month: m)
-                    .dayRowPadding(top: 12, bottom: 8)
-
-                dayHeader(d, trips: dayTrips)
-                    .dayRowPadding(top: 18, bottom: 4)
-
-                dayCards(dayTrips)
-                    .dayRowPadding(top: 5, bottom: 5)
-
-                if !others.isEmpty {
-                    Text("Inne miesiące z kursami")
-                        .font(.headline)
-                        .padding(.horizontal, 6)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .dayRowPadding(top: 22, bottom: 4)
-                    ForEach(others) { item in
-                        Button { showMonth(item.month) } label: {
-                            HStack {
-                                Text(Fmt.month(item.month)).font(.subheadline.weight(.semibold))
-                                Spacer()
-                                Text("\(Plural.pl(item.count, "kurs", "kursy", "kursów")) · \(Fmt.km(item.km)) km")
-                                    .font(.subheadline).monospacedDigit().foregroundStyle(.secondary)
-                                Image(systemName: "chevron.right")
-                                    .font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
-                            }
-                            .padding(.horizontal, 18).padding(.vertical, 14)
-                            .tripCardBackground()
-                        }
-                        .buttonStyle(CardPressStyle())
-                        .dayRowPadding(top: 4, bottom: 4)
-                    }
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 8)
-        }
-        .scrollIndicators(.hidden)
-    }
-
-    private func summary(month: Date) -> some View {
-        let monthTrips = trips(inMonth: month)
-        let monthKm = monthTrips.reduce(0) { $0 + $1.km }
-        return VStack(spacing: 26) {
+    private var summary: some View {
+        VStack(spacing: 26) {
             // Szklana kapsuła z miesiącem.
             HStack {
                 Button { showMonth(month.addingMonths(-1)) } label: {
@@ -400,7 +342,7 @@ struct ContentView: View {
     // MARK: - Dzień
 
     /// „Dziś” ze strzałkami; pod spodem liczba kursów i km z tego dnia.
-    private func dayHeader(_ day: Date, trips dayTrips: [Trip]) -> some View {
+    private var dayHeader: some View {
         let km = dayTrips.reduce(0) { $0 + $1.km }
         return HStack(spacing: 4) {
             Button { showDay(day.addingDays(-1)) } label: {
@@ -414,8 +356,8 @@ struct ContentView: View {
                     .font(.title2.weight(.bold))
                     .lineLimit(1).minimumScaleFactor(0.7)
                 Text(Calendar.current.isDateInToday(day) || Calendar.current.isDateInYesterday(day) || Calendar.current.isDateInTomorrow(day)
-                     ? "\(Fmt.weekdayDate(day)) · \(dayCountText(dayTrips, km: km))"
-                     : dayCountText(dayTrips, km: km))
+                     ? "\(Fmt.weekdayDate(day)) · \(dayCountText(km))"
+                     : dayCountText(km))
                     .font(.subheadline).foregroundStyle(.secondary)
                     .lineLimit(1).minimumScaleFactor(0.7)
             }
@@ -433,7 +375,7 @@ struct ContentView: View {
         .glass(in: RoundedRectangle(cornerRadius: 24, style: .continuous), interactive: false)
         .overlay(alignment: .bottom) {
             if !Calendar.current.isDateInToday(day) {
-                Button { setDay(.now) } label: {
+                Button { showDay(.now) } label: {
                     Label("Wróć do dziś", systemImage: "arrow.uturn.backward")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.orange)
@@ -447,14 +389,25 @@ struct ContentView: View {
         }
         .padding(.bottom, Calendar.current.isDateInToday(day) ? 0 : 16)
         .contentShape(Rectangle())
+        .simultaneousGesture(daySwipe)
     }
 
-    private func dayCountText(_ dayTrips: [Trip], km: Double) -> String {
+    /// Przesunięcie w lewo – następny dzień, w prawo – poprzedni.
+    private var daySwipe: some Gesture {
+        DragGesture(minimumDistance: 24)
+            .onEnded { value in
+                let dx = value.translation.width, dy = value.translation.height
+                guard abs(dx) > 60, abs(dx) > abs(dy) * 1.5 else { return }
+                showDay(day.addingDays(dx < 0 ? 1 : -1))
+            }
+    }
+
+    private func dayCountText(_ km: Double) -> String {
         dayTrips.isEmpty ? "brak kursów" : "\(Plural.pl(dayTrips.count, "kurs", "kursy", "kursów")) · \(Fmt.km(km)) km"
     }
 
     /// Karty kursów z jednego dnia. Przesunięcie w lewo – następny dzień, w prawo – poprzedni.
-    private func dayCards(_ dayTrips: [Trip]) -> some View {
+    private var dayCards: some View {
         VStack(spacing: 10) {
             if dayTrips.isEmpty {
                 Text("Brak kursów tego dnia. Przesuń w lewo lub w prawo, żeby zobaczyć inne dni.")
@@ -474,8 +427,13 @@ struct ContentView: View {
                 }
             }
         }
+        .id(day)
+        .transition(.asymmetric(
+            insertion: .move(edge: dayStep > 0 ? .trailing : .leading).combined(with: .opacity),
+            removal: .opacity))
         .frame(maxWidth: .infinity, minHeight: 140, alignment: .top)
         .contentShape(Rectangle())
+        .simultaneousGesture(daySwipe)
     }
 
     /// Szklany dok na dole: Skanuj (pomarańczowy), Galeria, Ręcznie.
@@ -744,7 +702,11 @@ private extension View {
             .contentShape(shape)
     }
 
-    func dayRowPadding(top: CGFloat, bottom: CGFloat) -> some View {
-        padding(.top, top).padding(.bottom, bottom)
+    /// Wiersz listy bez tła i separatora, z marginesami jak na projekcie.
+    func plainRow(top: CGFloat, bottom: CGFloat) -> some View {
+        self
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+            .listRowInsets(EdgeInsets(top: top, leading: 16, bottom: bottom, trailing: 16))
     }
 }
