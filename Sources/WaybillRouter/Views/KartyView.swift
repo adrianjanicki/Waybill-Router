@@ -134,19 +134,23 @@ struct KartyView: View {
                     .padding(.vertical, 8)
             }
         }
-        .onChange(of: edits) { _, new in new.save(month: month) }
+        // Przy każdym wejściu na ekran bierzemy poprawki z pliku – to jedyne źródło prawdy.
+        .onAppear { edits = KartaEdits.load(month: month) }
         .task(id: exportKey) { export() }
         .sheet(item: $editing) { target in
-            KartaRowEditor(trip: target.trip, edit: edits.rows[KartaEdits.key(for: target.trip)] ?? KartaRowEdit()) {
-                edits.set($0, for: target.trip)
+            KartaRowEditor(trip: target.trip, edit: edits.edit(for: target.trip) ?? KartaRowEdit()) {
+                let edit = $0
+                updateEdits { $0.set(edit, for: target.trip) }
             }
         }
         .sheet(isPresented: $editingHeader) {
-            KartaHeaderEditor(edits: $edits, defaults: defaultHeader)
+            KartaHeaderEditor(edits: edits, defaults: defaultHeader) { new in
+                updateEdits { $0 = new }
+            }
         }
         .confirmationDialog("Cofnąć wszystkie poprawki kart z tego miesiąca?", isPresented: $confirmReset,
                             titleVisibility: .visible) {
-            Button("Cofnij poprawki", role: .destructive) { edits = KartaEdits() }
+            Button("Cofnij poprawki", role: .destructive) { updateEdits { $0 = KartaEdits() } }
         }
     }
 
@@ -172,6 +176,16 @@ struct KartyView: View {
         .tint(.orange)
         .buttonBorderShape(.capsule)
         .disabled(trips.isEmpty || pdfURL == nil)
+    }
+
+    /// Zmiana poprawek: od razu na ekranie i od razu w pliku.
+    /// Wcześniej zapis szedł przez `.onChange(of: edits)`, które nie zawsze się wywoływało
+    /// (zmiana z arkusza) – poprawka znikała po wyjściu z ekranu i powrocie.
+    private func updateEdits(_ change: (inout KartaEdits) -> Void) {
+        var new = edits
+        change(&new)
+        edits = new
+        new.save(month: month)
     }
 
     private func export() {
@@ -266,8 +280,9 @@ private struct KartaRowEditor: View {
 
 /// Nagłówek karty dla tego miesiąca (domyślnie z Ustawień).
 private struct KartaHeaderEditor: View {
-    @Binding var edits: KartaEdits
+    var edits: KartaEdits
     var defaults: KartaHeader
+    var onSave: (KartaEdits) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var carrier = ""
@@ -300,9 +315,11 @@ private struct KartaHeaderEditor: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Anuluj") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Zapisz") {
-                        edits.carrier = carrier == defaults.carrier ? nil : carrier
-                        edits.car = car == defaults.car ? nil : car
-                        edits.registration = registration == defaults.registration ? nil : registration
+                        var new = edits
+                        new.carrier = carrier == defaults.carrier ? nil : carrier
+                        new.car = car == defaults.car ? nil : car
+                        new.registration = registration == defaults.registration ? nil : registration
+                        onSave(new)
                         dismiss()
                     }
                     .saveButtonStyle()

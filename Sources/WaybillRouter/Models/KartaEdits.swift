@@ -33,8 +33,17 @@ struct KartaEdits: Codable, Hashable {
         String(format: "%.3f", trip.created.timeIntervalSinceReferenceDate)
     }
 
+    /// Poprawka kursu. Gdy klucz nie pasuje co do znaku (zaokrąglenie czasu przy zapisie bazy),
+    /// szukamy klucza różniącego się o mniej niż 0,01 s.
+    func edit(for trip: Trip) -> KartaRowEdit? {
+        let key = Self.key(for: trip)
+        if let e = rows[key] { return e }
+        let t = trip.created.timeIntervalSinceReferenceDate
+        return rows.first { k, _ in Double(k).map { abs($0 - t) < 0.01 } ?? false }?.value
+    }
+
     func row(for trip: Trip) -> KartaRow {
-        let e = rows[Self.key(for: trip)]
+        let e = edit(for: trip)
         return KartaRow(
             date: e?.date ?? trip.date,
             description: e?.description ?? trip.routeDescription,
@@ -55,6 +64,11 @@ struct KartaEdits: Codable, Hashable {
 
     mutating func set(_ edit: KartaRowEdit, for trip: Trip) {
         let key = Self.key(for: trip)
+        // Usuń ewentualny stary, prawie identyczny klucz tego samego kursu.
+        let t = trip.created.timeIntervalSinceReferenceDate
+        for k in rows.keys where k != key && (Double(k).map { abs($0 - t) < 0.01 } ?? false) {
+            rows[k] = nil
+        }
         if edit.isEmpty { rows[key] = nil } else { rows[key] = edit }
     }
 
@@ -75,10 +89,17 @@ struct KartaEdits: Codable, Hashable {
 
     func save(month: Date) {
         let url = Self.url(for: month)
-        if isEmpty {
-            try? FileManager.default.removeItem(at: url)
-        } else if let data = try? JSONEncoder().encode(self) {
-            try? data.write(to: url, options: .atomic)
+        do {
+            if isEmpty {
+                if FileManager.default.fileExists(atPath: url.path) {
+                    try FileManager.default.removeItem(at: url)
+                }
+            } else {
+                try JSONEncoder().encode(self).write(to: url, options: .atomic)
+            }
+            AppLog.log("Zapisano poprawki kart \(KartaExport.fileMonth(month)): \(rows.count) wierszy")
+        } catch {
+            AppLog.log("Błąd zapisu poprawek kart: \(error.localizedDescription)")
         }
     }
 }

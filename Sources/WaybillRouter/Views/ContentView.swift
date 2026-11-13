@@ -49,11 +49,29 @@ struct ContentView: View {
     @State private var showDrafts = false
     /// Szkic wybrany z listy – otwieramy go dopiero po zamknięciu listy.
     @State private var draftToOpen: EditorTarget?
+    /// Ręczne poprawki kart drogowych (klucz: RRRR-MM) – km z karty liczą się też tutaj.
+    @State private var kartaEdits: [String: KartaEdits] = [:]
 
     private var monthTrips: [Trip] { allTrips.filter { $0.date.isSameMonth(as: month) } }
     /// Kursy wybranego dnia, w kolejności dodania.
     private var dayTrips: [Trip] { allTrips.filter { $0.date.isSameDay(as: day) } }
-    private var monthKm: Double { monthTrips.reduce(0) { $0 + $1.km } }
+    private var monthKm: Double { monthTrips.reduce(0) { $0 + km($1) } }
+
+    /// Kilometry kursu tak, jak są na karcie drogowej (z ręczną poprawką, jeśli jest).
+    private func km(_ trip: Trip) -> Double {
+        kartaEdits[KartaExport.fileMonth(trip.date)]?.row(for: trip).km ?? trip.km
+    }
+
+    /// Wczytuje poprawki kart dla wszystkich miesięcy z kursami.
+    private func reloadKartaEdits() {
+        let months = Set(allTrips.map { $0.date.startOfMonth })
+        var loaded: [String: KartaEdits] = [:]
+        for m in months {
+            let e = KartaEdits.load(month: m)
+            if !e.rows.isEmpty { loaded[KartaExport.fileMonth(m)] = e }
+        }
+        kartaEdits = loaded
+    }
     private var knownFirmKeys: Set<String> { Set(firms.map(\.key)) }
 
     /// Inne miesiące, w których są kursy (żeby kurs zapisany z inną datą nie „znikał”).
@@ -61,7 +79,7 @@ struct ContentView: View {
         let grouped = Dictionary(grouping: allTrips) { $0.date.startOfMonth }
         return grouped
             .filter { !$0.key.isSameMonth(as: month) }
-            .map { MonthSummary(month: $0.key, count: $0.value.count, km: $0.value.reduce(0) { $0 + $1.km }) }
+            .map { MonthSummary(month: $0.key, count: $0.value.count, km: $0.value.reduce(0) { $0 + self.km($1) }) }
             .sorted { $0.month > $1.month }
     }
 
@@ -213,7 +231,11 @@ struct ContentView: View {
             }
             .onAppear {
                 AppLog.log("Start aplikacji. Kursów w bazie: \(allTrips.count)")
+                reloadKartaEdits()
             }
+            // Po powrocie z Kart drogowych (tam się poprawia km) i po zmianie listy kursów.
+            .onChange(of: showKarty) { _, shown in if !shown { reloadKartaEdits() } }
+            .onChange(of: allTrips.count) { _, _ in reloadKartaEdits() }
             .onChange(of: photoItem) { _, item in
                 guard let item else { return }
                 Task {
@@ -253,7 +275,7 @@ struct ContentView: View {
 
     /// Kurs wymaga uwagi: firma bez zapisanego adresu albo brak kilometrów.
     private func needsAttention(_ trip: Trip) -> Bool {
-        trip.km <= 0 || trip.firmNames.contains { !knownFirmKeys.contains(Firm.key(for: $0)) }
+        km(trip) <= 0 || trip.firmNames.contains { !knownFirmKeys.contains(Firm.key(for: $0)) }
     }
 
     private func reopen(_ target: EditorTarget) {
@@ -360,7 +382,7 @@ struct ContentView: View {
 
     /// „Dziś” ze strzałkami; pod spodem liczba kursów i km z tego dnia.
     private var dayHeader: some View {
-        let km = dayTrips.reduce(0) { $0 + $1.km }
+        let km = dayTrips.reduce(0) { $0 + self.km($1) }
         return HStack(spacing: 4) {
             Button { showDay(day.addingDays(-1)) } label: {
                 Image(systemName: "chevron.left").font(.headline)
@@ -450,7 +472,7 @@ struct ContentView: View {
                     guard !justSwiped else { return }
                     editor = EditorTarget(trip: trip)
                 } label: {
-                    TripRow(trip: trip, needsAttention: needsAttention(trip))
+                    TripRow(trip: trip, km: km(trip), needsAttention: needsAttention(trip))
                 }
                 .buttonStyle(CardPressStyle())
                 .contextMenu {
@@ -643,6 +665,8 @@ private struct MonthSummary: Identifiable {
 /// Karta kursu: data | firmy w kolejności jazdy | kilometry.
 private struct TripRow: View {
     var trip: Trip
+    /// Km z karty drogowej (po ręcznej poprawce) – może się różnić od `trip.km`.
+    var km: Double
     var needsAttention: Bool
 
     var body: some View {
@@ -664,17 +688,17 @@ private struct TripRow: View {
                     .font(.body.weight(.medium))
                     .fixedSize(horizontal: false, vertical: true)
                 if needsAttention {
-                    Label(trip.km <= 0 ? "Brak kilometrów" : "Firma bez adresu", systemImage: "exclamationmark.circle.fill")
+                    Label(km <= 0 ? "Brak kilometrów" : "Firma bez adresu", systemImage: "exclamationmark.circle.fill")
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text("\(Fmt.km(trip.km)) km")
+            Text("\(Fmt.km(km)) km")
                 .font(.title3.weight(.bold).monospacedDigit())
                 .lineLimit(1)
-                .foregroundStyle(trip.km <= 0 ? AnyShapeStyle(Color.orange) : AnyShapeStyle(Color.primary))
+                .foregroundStyle(km <= 0 ? AnyShapeStyle(Color.orange) : AnyShapeStyle(Color.primary))
                 .padding(.leading, 10)
         }
         .padding(.vertical, 16)
