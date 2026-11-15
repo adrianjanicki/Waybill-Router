@@ -35,6 +35,13 @@ struct ContentView: View {
     @State private var dayStep = 1
     /// Kiedy palec ostatnio przesuwał dzień w bok – tuż potem puszczenie palca na karcie nie otwiera kursu.
     @State private var lastDaySwipe = Date.distantPast
+    /// Przesunięcie kart kursów w bok podczas zmiany dnia (wyjazd i wjazd).
+    @State private var cardsOffset: CGFloat = 0
+    @State private var cardsOpacity: Double = 1
+    /// Karty idą za palcem, kiedy przesuwa się dzień.
+    @State private var cardsDrag: CGFloat = 0
+    /// Dzień, do którego właśnie trwa animacja – szybkie kolejne stuknięcia liczą od niego.
+    @State private var pendingDay: Date?
     @State private var showScanner = false
     @State private var showKarty = false
     @State private var showSettings = false
@@ -89,14 +96,40 @@ struct ContentView: View {
     }
 
     /// Zmiana dnia (gest albo strzałki); miesiąc u góry idzie za dniem.
+    /// Karty kursów wyjeżdżają w bok, potem nowe wjeżdżają z drugiej strony,
+    /// a nagłówek dnia przewija cyfry. Tak samo po strzałkach i po przesunięciu palcem.
     private func showDay(_ newDay: Date) {
         let target = newDay.startOfDay
-        guard !target.isSameDay(as: day) else { return }
-        dayStep = target > day ? 1 : -1
-        // Ta sama animacja co przy zmianie miesiąca.
-        withAnimation {
-            day = target
-            if !target.isSameMonth(as: month) { month = target.startOfMonth }
+        let current = pendingDay ?? day
+        guard !target.isSameDay(as: current) else { return }
+        let step = target > current ? 1 : -1
+        let shift: CGFloat = 70 * CGFloat(step)
+        pendingDay = target
+        dayStep = step
+
+        // 1. Stare karty odjeżdżają (od miejsca, gdzie zostawił je palec).
+        withAnimation(.easeIn(duration: 0.14)) {
+            cardsDrag = 0
+            cardsOffset = -shift
+            cardsOpacity = 0
+        } completion: {
+            guard pendingDay == target else { return }
+            // 2. Bez animacji: nowe karty czekają po drugiej stronie.
+            var quiet = Transaction()
+            quiet.disablesAnimations = true
+            withTransaction(quiet) { cardsOffset = shift }
+            // 3. W następnym przebiegu: zmiana dnia i wjazd kart. Osobny przebieg, bo zaraz
+            // po geście przewijana lista potrafi zgubić animację.
+            DispatchQueue.main.async {
+                guard pendingDay == target else { return }
+                withAnimation(.spring(duration: 0.32, bounce: 0.15)) {
+                    day = target
+                    if !target.isSameMonth(as: month) { month = target.startOfMonth }
+                    cardsOffset = 0
+                    cardsOpacity = 1
+                }
+                pendingDay = nil
+            }
         }
     }
 
@@ -110,9 +143,13 @@ struct ContentView: View {
             target = (allTrips.last { $0.date.isSameMonth(as: start) }?.date ?? start).startOfDay
         }
         dayStep = start > month ? 1 : -1
+        pendingDay = nil
         withAnimation {
             month = start
             day = target
+            cardsOffset = 0
+            cardsOpacity = 1
+            cardsDrag = 0
         }
     }
 
@@ -385,7 +422,7 @@ struct ContentView: View {
         let km = dayTrips.reduce(0) { $0 + self.km($1) }
         return VStack(spacing: 8) {
             HStack(spacing: 4) {
-                Button { showDay(day.addingDays(-1)) } label: {
+                Button { showDay((pendingDay ?? day).addingDays(-1)) } label: {
                     Image(systemName: "chevron.left").font(.headline)
                         .frame(width: 40, height: 44).contentShape(Rectangle())
                 }
@@ -405,7 +442,7 @@ struct ContentView: View {
                 }
                 .frame(maxWidth: .infinity)
 
-                Button { showDay(day.addingDays(1)) } label: {
+                Button { showDay((pendingDay ?? day).addingDays(1)) } label: {
                     Image(systemName: "chevron.right").font(.headline)
                         .frame(width: 40, height: 44).contentShape(Rectangle())
                 }
@@ -438,12 +475,17 @@ struct ContentView: View {
         DragGesture(minimumDistance: 12)
             .onChanged { value in
                 let dx = value.translation.width, dy = value.translation.height
-                if abs(dx) > 12, abs(dx) > abs(dy) { lastDaySwipe = .now }
+                if abs(dx) > 12, abs(dx) > abs(dy) {
+                    lastDaySwipe = .now
+                    if pendingDay == nil { cardsDrag = dx * 0.6 }
+                }
             }
             .onEnded { value in
                 let dx = value.translation.width, dy = value.translation.height
                 if abs(dx) > 60, abs(dx) > abs(dy) * 1.5 {
-                    showDay(day.addingDays(dx < 0 ? 1 : -1))
+                    showDay((pendingDay ?? day).addingDays(dx < 0 ? 1 : -1))
+                } else if cardsDrag != 0 {
+                    withAnimation(.spring(duration: 0.3)) { cardsDrag = 0 }
                 }
             }
     }
@@ -480,10 +522,8 @@ struct ContentView: View {
                 }
             }
         }
-        .id(day)
-        .transition(.asymmetric(
-            insertion: .move(edge: dayStep > 0 ? .trailing : .leading).combined(with: .opacity),
-            removal: .opacity))
+        .offset(x: cardsOffset + cardsDrag)
+        .opacity(cardsOpacity)
         .frame(maxWidth: .infinity, minHeight: 140, alignment: .top)
         .contentShape(Rectangle())
         .simultaneousGesture(daySwipe)
