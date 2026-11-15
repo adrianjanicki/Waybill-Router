@@ -383,38 +383,40 @@ struct ContentView: View {
     /// „Dziś” ze strzałkami; pod spodem liczba kursów i km z tego dnia.
     private var dayHeader: some View {
         let km = dayTrips.reduce(0) { $0 + self.km($1) }
-        return HStack(spacing: 4) {
-            Button { showDay(day.addingDays(-1)) } label: {
-                Image(systemName: "chevron.left").font(.headline)
-                    .frame(width: 40, height: 44).contentShape(Rectangle())
-            }
-            .accessibilityLabel("Poprzedni dzień")
+        return VStack(spacing: 8) {
+            HStack(spacing: 4) {
+                Button { showDay(day.addingDays(-1)) } label: {
+                    Image(systemName: "chevron.left").font(.headline)
+                        .frame(width: 40, height: 44).contentShape(Rectangle())
+                }
+                .accessibilityLabel("Poprzedni dzień")
 
-            VStack(spacing: 2) {
-                Text(Fmt.dayTitle(day))
-                    .font(.title2.weight(.bold))
-                    .lineLimit(1).minimumScaleFactor(0.7)
-                    .contentTransition(.numericText(countsDown: dayStep < 0))
-                Text(Calendar.current.isDateInToday(day) || Calendar.current.isDateInYesterday(day) || Calendar.current.isDateInTomorrow(day)
-                     ? "\(Fmt.weekdayDate(day)) · \(dayCountText(km))"
-                     : dayCountText(km))
-                    .font(.subheadline).foregroundStyle(.secondary)
-                    .lineLimit(1).minimumScaleFactor(0.7)
-                    .contentTransition(.numericText(countsDown: dayStep < 0))
-            }
-            .frame(maxWidth: .infinity)
+                VStack(spacing: 2) {
+                    Text(Fmt.dayTitle(day))
+                        .font(.title2.weight(.bold))
+                        .lineLimit(1).minimumScaleFactor(0.7)
+                        .contentTransition(.numericText(countsDown: dayStep < 0))
+                    Text(Calendar.current.isDateInToday(day) || Calendar.current.isDateInYesterday(day) || Calendar.current.isDateInTomorrow(day)
+                         ? "\(Fmt.weekdayDate(day)) · \(dayCountText(km))"
+                         : dayCountText(km))
+                        .font(.subheadline).foregroundStyle(.secondary)
+                        .lineLimit(1).minimumScaleFactor(0.7)
+                        .contentTransition(.numericText(countsDown: dayStep < 0))
+                }
+                .frame(maxWidth: .infinity)
 
-            Button { showDay(day.addingDays(1)) } label: {
-                Image(systemName: "chevron.right").font(.headline)
-                    .frame(width: 40, height: 44).contentShape(Rectangle())
+                Button { showDay(day.addingDays(1)) } label: {
+                    Image(systemName: "chevron.right").font(.headline)
+                        .frame(width: 40, height: 44).contentShape(Rectangle())
+                }
+                .accessibilityLabel("Następny dzień")
             }
-            .accessibilityLabel("Następny dzień")
-        }
-        .buttonStyle(.plain)
-        .padding(.horizontal, 4)
-        .padding(.vertical, 6)
-        .glass(in: RoundedRectangle(cornerRadius: 24, style: .continuous), interactive: false)
-        .overlay(alignment: .bottom) {
+            .buttonStyle(.plain)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 6)
+            .glass(in: RoundedRectangle(cornerRadius: 24, style: .continuous), interactive: false)
+
+            // Pod kartą (nie na niej), żeby nie zasłaniał liczby kursów i km.
             if !Calendar.current.isDateInToday(day) {
                 Button { showDay(.now) } label: {
                     Label("Wróć do dziś", systemImage: "arrow.uturn.backward")
@@ -424,11 +426,9 @@ struct ContentView: View {
                         .glass(in: Capsule())
                 }
                 .buttonStyle(.plain)
-                .offset(y: 16)
                 .transition(.opacity)
             }
         }
-        .padding(.bottom, Calendar.current.isDateInToday(day) ? 0 : 16)
         .contentShape(Rectangle())
         .simultaneousGesture(daySwipe)
     }
