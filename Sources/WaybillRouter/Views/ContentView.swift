@@ -31,8 +31,6 @@ struct ContentView: View {
     @State private var month = Date().startOfMonth
     /// Dzień pokazany na ekranie głównym (przesuwany w lewo/prawo).
     @State private var day = Date().startOfDay
-    /// Kierunek ostatniej zmiany dnia – do animacji wjazdu kart.
-    @State private var dayStep = 1
     /// Kiedy palec ostatnio przesuwał dzień w bok – tuż potem puszczenie palca na karcie nie otwiera kursu.
     @State private var lastDaySwipe = Date.distantPast
     /// Przesunięcie kart kursów w bok podczas zmiany dnia (wyjazd i wjazd).
@@ -97,7 +95,7 @@ struct ContentView: View {
 
     /// Zmiana dnia (gest albo strzałki); miesiąc u góry idzie za dniem.
     /// Karty kursów wyjeżdżają w bok, potem nowe wjeżdżają z drugiej strony,
-    /// a nagłówek dnia przewija cyfry. Tak samo po strzałkach i po przesunięciu palcem.
+    /// razem z tytułem dnia w nagłówku. Tak samo po strzałkach i po przesunięciu palcem.
     private func showDay(_ newDay: Date) {
         let target = newDay.startOfDay
         let current = pendingDay ?? day
@@ -105,7 +103,6 @@ struct ContentView: View {
         let step = target > current ? 1 : -1
         let shift: CGFloat = 70 * CGFloat(step)
         pendingDay = target
-        dayStep = step
 
         // 1. Stare karty odjeżdżają (od miejsca, gdzie zostawił je palec).
         withAnimation(.easeIn(duration: 0.14)) {
@@ -114,16 +111,20 @@ struct ContentView: View {
             cardsOpacity = 0
         } completion: {
             guard pendingDay == target else { return }
-            // 2. Bez animacji: nowe karty czekają po drugiej stronie.
+            // 2. Bez animacji, póki wszystko jest niewidoczne: zmiana dnia i nowe karty
+            // czekają po drugiej stronie. Zmiana dnia NIE może być animowana – List
+            // animuje wtedy wiersz przenikaniem i stare kursy prześwitują przez nowe.
             var quiet = Transaction()
             quiet.disablesAnimations = true
-            withTransaction(quiet) { cardsOffset = shift }
-            // 3. W następnym przebiegu: zmiana dnia i wjazd kart. Osobny przebieg, bo zaraz
-            // po geście przewijana lista potrafi zgubić animację.
+            withTransaction(quiet) {
+                day = target
+                cardsOffset = shift
+            }
+            // 3. W następnym przebiegu: wjazd kart (i miesiąca, gdy się zmienił). Osobny
+            // przebieg, bo zaraz po geście przewijana lista potrafi zgubić animację.
             DispatchQueue.main.async {
                 guard pendingDay == target else { return }
                 withAnimation(.spring(duration: 0.32, bounce: 0.15)) {
-                    day = target
                     if !target.isSameMonth(as: month) { month = target.startOfMonth }
                     cardsOffset = 0
                     cardsOpacity = 1
@@ -142,7 +143,6 @@ struct ContentView: View {
         } else {
             target = (allTrips.last { $0.date.isSameMonth(as: start) }?.date ?? start).startOfDay
         }
-        dayStep = start > month ? 1 : -1
         pendingDay = nil
         withAnimation {
             month = start
@@ -432,15 +432,17 @@ struct ContentView: View {
                     Text(Fmt.dayTitle(day))
                         .font(.title2.weight(.bold))
                         .lineLimit(1).minimumScaleFactor(0.7)
-                        .contentTransition(.numericText(countsDown: dayStep < 0))
                     Text(Calendar.current.isDateInToday(day) || Calendar.current.isDateInYesterday(day) || Calendar.current.isDateInTomorrow(day)
                          ? "\(Fmt.weekdayDate(day)) · \(dayCountText(km))"
                          : dayCountText(km))
                         .font(.subheadline).foregroundStyle(.secondary)
                         .lineLimit(1).minimumScaleFactor(0.7)
-                        .contentTransition(.numericText(countsDown: dayStep < 0))
                 }
+                // Tytuł dnia odjeżdża i wjeżdża razem z kartami (zamiast nakładania liter).
+                .offset(x: cardsOffset + cardsDrag)
+                .opacity(cardsOpacity)
                 .frame(maxWidth: .infinity)
+                .clipped()
 
                 Button { showDay((pendingDay ?? day).addingDays(1)) } label: {
                     Image(systemName: "chevron.right").font(.headline)
